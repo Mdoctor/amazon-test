@@ -22,7 +22,7 @@ A high-performance parallel web scraper for Amazon product data using Python. Th
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd amazon-scraper
+cd amazon-test
 ```
 
 2. Install required packages:
@@ -68,7 +68,7 @@ python main.py
 ## Project Structure
 
 ```
-amazon-scraper/
+amazon-test/
 ├── main.py              # Main entry point
 ├── parallel_scraper.py  # Parallel scraping implementation
 ├── scraper.py          # Core scraping logic
@@ -111,10 +111,6 @@ Comprehensive logging is implemented through `logger.py`:
 3. Commit your changes
 4. Push to the branch
 5. Create a Pull Request
-
-## License
-
-[Add your license information here]
 
 ## Disclaimer
 
