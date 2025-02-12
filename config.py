@@ -1,5 +1,7 @@
 class ScraperConfig:
-    MAX_PRODUCTS_PER_CATEGORY = 10
+    MAX_PRODUCTS_PER_CATEGORY = 2
+    MAX_WORKERS = 4  # 默认并行进程数
+    CHUNK_SIZE = 10  # 每个进程处理的产品数量
     WAIT_TIME = 15
     MIN_SLEEP = 3
     MAX_SLEEP = 7

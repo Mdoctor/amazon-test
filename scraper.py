@@ -239,15 +239,22 @@ class AmazonScraper:
                 if brand_text and brand_text != 'N/A':
                     # 改进品牌文本清理逻辑
                     brand_text = brand_text.replace('Brand:', '').replace('Visit the', '').replace('Store', '')
+
+                    # 移除首尾的符号和空格
+                    brand_text = re.sub(r'^[^\w\s]+|[^\w\s]+$', '', brand_text)
+
                     # 移除多余的空格和重复的词
                     words = [word.strip() for word in brand_text.split() if word.strip()]
-                    # 移除重复的词
+                    # 移除每个词首尾的符号
+                    words = [re.sub(r'^[^\w]+|[^\w]+$', '', word) for word in words]
+
+                    # 移除重复的词并过滤掉空字符串
                     unique_words = []
                     for word in words:
-                        if word not in unique_words:
+                        if word and word not in unique_words:
                             unique_words.append(word)
-                    brand_text = ' '.join(unique_words)
 
+                    brand_text = ' '.join(unique_words).strip()
                     if brand_text:
                         return brand_text
 
@@ -257,20 +264,25 @@ class AmazonScraper:
                     brand_match = re.search(r'/stores/([^/]+)/', brand_url)
                     if brand_match:
                         brand_name = brand_match.group(1).replace('-', ' ').title()
-                        # 同样处理可能的重复
+                        # 同样处理可能的重复和符号
                         words = [word.strip() for word in brand_name.split() if word.strip()]
+                        words = [re.sub(r'^[^\w]+|[^\w]+$', '', word) for word in words]
                         unique_words = []
                         for word in words:
-                            if word not in unique_words:
+                            if word and word not in unique_words:
                                 unique_words.append(word)
-                        return ' '.join(unique_words)
+                        brand_name = ' '.join(unique_words).strip()
+                        if brand_name:
+                            return brand_name
 
             # 尝试从页面标题中提取品牌
             title = self._get_product_title()
             if title != 'N/A':
                 first_word = title.split()[0]
+                # 清理首个词的首尾符号
+                first_word = re.sub(r'^[^\w]+|[^\w]+$', '', first_word)
                 if len(first_word) > 2:  # 避免像"A"、"An"这样的词
-                    return first_word
+                    return first_word.strip()
 
         except Exception as e:
             logger.warning(f"Error getting brand: {str(e)}")
