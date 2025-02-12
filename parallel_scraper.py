@@ -4,7 +4,7 @@ from driver_manager import DriverManager
 from scraper import AmazonScraper
 from logger import logger
 import time
-from itertools import chain
+from config import ScraperConfig
 
 
 class ParallelScraper:
@@ -16,7 +16,7 @@ class ParallelScraper:
         """单个类别的爬取函数"""
         try:
             driver_manager = DriverManager()
-            driver_manager.setup_driver(headless=True)
+            driver_manager.setup_driver(ScraperConfig.HEADLESS)
             scraper = AmazonScraper(driver_manager)
             
             try:
@@ -45,7 +45,7 @@ class ParallelScraper:
         product_url, category_name = args
         try:
             driver_manager = DriverManager()
-            driver_manager.setup_driver(headless=True)
+            driver_manager.setup_driver(ScraperConfig.HEADLESS)
             scraper = AmazonScraper(driver_manager)
             scraper.category_name = category_name
             

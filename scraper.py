@@ -5,6 +5,8 @@ from urllib.parse import unquote
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+from selenium.webdriver.support.wait import WebDriverWait
+
 from config import ScraperConfig
 from logger import logger
 from data_saver import DataSaver
@@ -39,17 +41,17 @@ class AmazonScraper:
         sleep_time = random.uniform(min_time, max_time)
         time.sleep(sleep_time)
 
-    def safe_find_element(self, by, value, wait=True):
-        """安全地查找元素"""
+    def safe_find_element(self, by, selector, timeout=10):
         try:
-            if wait:
-                return self.wait.until(EC.presence_of_element_located((by, value)))
-            return self.driver.find_element(by, value)
-        except (TimeoutException, NoSuchElementException) as e:
-            logger.debug(f"Element not found: {value} - {str(e)}")
+            element = WebDriverWait(self.driver, timeout).until(
+                EC.presence_of_element_located((by, selector))
+            )
+            return element
+        except TimeoutException:
+            logger.warning(f"Timeout waiting for element: {selector}")
             return None
         except Exception as e:
-            logger.warning(f"Error finding element {value}: {str(e)}")
+            logger.error(f"Error finding element {selector}: {str(e)}")
             return None
 
     def find_element_with_retry(self, selectors, max_retries=3):
@@ -92,32 +94,60 @@ class AmazonScraper:
 
     def clean_price(self, price_text):
         """清理和标准化价格文本"""
-        if price_text and price_text != 'N/A':
-            try:
-                # 尝试直接从价格文本中提取数字
-                price_match = re.search(r'(\d+)\.?(\d*)', price_text)
+        try:
+            # 首先尝试获取apexPriceToPay中的价格
+            price_script = self.driver.execute_script("""
+                let priceElement = document.querySelector('.apexPriceToPay .a-offscreen');
+                if (priceElement) {
+                    return priceElement.textContent;
+                }
+                // 如果找不到主价格，尝试其他价格元素
+                let alternativePriceElements = [
+                    '.a-price .a-offscreen',
+                    '#priceblock_ourprice',
+                    '#priceblock_dealprice',
+                    '.a-price.a-text-price span[aria-hidden="true"]'
+                ];
+                for (let selector of alternativePriceElements) {
+                    let element = document.querySelector(selector);
+                    if (element) {
+                        return element.textContent;
+                    }
+                }
+                return null;
+            """)
+
+            if price_script:
+                # 移除货币符号和其他非数字字符
+                price_text = price_script.replace('$', '').replace(',', '').strip()
+                price_match = re.search(r'(\d+\.?\d*)', price_text)
                 if price_match:
-                    whole = price_match.group(1)
-                    fraction = price_match.group(2) or '00'
-                    return float(f"{whole}.{fraction}")
+                    price = float(price_match.group(1))
+                    return "{:.2f}".format(price)
 
-                # 如果上面失败，尝试分别查找整数和小数部分
-                whole_elem = self.find_element_with_retry([
-                    ('CSS_SELECTOR', '.a-price-whole'),
-                    ('XPATH', "//span[contains(@class,'a-price-whole')]")
-                ])
-                fraction_elem = self.find_element_with_retry([
-                    ('CSS_SELECTOR', '.a-price-fraction'),
-                    ('XPATH', "//span[contains(@class,'a-price-fraction')]")
-                ])
+            # 如果JavaScript方法失败，尝试直接的DOM查询
+            price_selectors = [
+                ('CSS_SELECTOR', '.apexPriceToPay .a-offscreen'),
+                ('CSS_SELECTOR', '.a-price .a-offscreen'),
+                ('CSS_SELECTOR', '.a-price.a-text-price span[aria-hidden="true"]'),
+                ('ID', 'priceblock_ourprice'),
+                ('ID', 'priceblock_dealprice')
+            ]
 
-                if whole_elem:
-                    whole = re.sub(r'[^\d]', '', self.get_text_safely(whole_elem))
-                    fraction = re.sub(r'[^\d]', '', self.get_text_safely(fraction_elem)) if fraction_elem else '00'
-                    return float(f"{whole}.{fraction}")
+            for by_method, selector in price_selectors:
+                price_elem = self.safe_find_element(getattr(By, by_method), selector)
+                if price_elem:
+                    price_text = price_elem.get_attribute('textContent')
+                    if price_text:
+                        price_text = price_text.replace('$', '').replace(',', '').strip()
+                        price_match = re.search(r'(\d+\.?\d*)', price_text)
+                        if price_match:
+                            price = float(price_match.group(1))
+                            return "{:.2f}".format(price)
 
-            except Exception as e:
-                logger.warning(f"Error cleaning price: {str(e)}")
+        except Exception as e:
+            logger.warning(f"Error cleaning price: {str(e)}")
+
         return 'N/A'
 
     def _get_product_title(self):
@@ -126,93 +156,81 @@ class AmazonScraper:
         return self.get_text_safely(title_elem)
 
     def _get_product_price(self):
-        """获取商品价格"""
-        price_elem = self.find_element_with_retry(ScraperConfig.PRICE_SELECTORS)
-        price_text = self.get_text_safely(price_elem)
-        return self.clean_price(price_text)
+        try:
+            # 1. 首先尝试获取 apexPriceToPay 中的价格
+            price_element = self.safe_find_element(By.CSS_SELECTOR, '.apexPriceToPay .a-offscreen')
+            if price_element:
+                price_text = price_element.get_attribute('textContent')
+                if price_text:
+                    return price_text.replace('$', '').replace(',', '').strip()
+
+            # 2. 备选选择器
+            selectors = [
+                '.a-price .a-offscreen',
+                '#priceblock_ourprice',
+                '#priceblock_dealprice',
+                '.a-price.a-text-price span[aria-hidden="true"]'
+            ]
+
+            for selector in selectors:
+                element = self.safe_find_element(By.CSS_SELECTOR, selector)
+                if element:
+                    price_text = element.get_attribute('textContent')
+                    if price_text:
+                        return price_text.replace('$', '').replace(',', '').strip()
+
+            return 'N/A'
+        except Exception as e:
+            logger.error(f"Error extracting price: {str(e)}")
+            return 'N/A'
 
     def _get_product_rating(self):
-        """获取商品评分"""
         try:
-            # 尝试获取星级评分
-            rating_script = self.driver.execute_script("""
-                var ratingElement = document.querySelector('#acrPopover');
-                if (ratingElement) {
-                    return ratingElement.getAttribute('title');
-                }
-                return null;
-            """)
-
-            if rating_script:
-                rating_match = re.search(r'(\d+\.?\d*)\s+out of\s+5', rating_script)
-                if rating_match:
-                    return rating_match.group(1)
-
-            # 备选方法：尝试其他选择器
-            selectors = [
-                ('CSS_SELECTOR', '#acrPopover'),
-                ('CSS_SELECTOR', 'span[data-hook="rating-out-of-text"]'),
-                ('CSS_SELECTOR', '.a-icon-star .a-icon-alt'),
-                ('XPATH', '//span[@class="a-icon-alt"]')
+            # 1. 直接获取评分文本
+            rating_selectors = [
+                '#acrPopover .a-icon-alt',
+                '.a-icon-star .a-icon-alt',
+                '[data-hook="rating-out-of-text"]'
             ]
 
-            for by_method, selector in selectors:
-                element = self.safe_find_element(getattr(By, by_method), selector)
+            for selector in rating_selectors:
+                element = self.safe_find_element(By.CSS_SELECTOR, selector)
                 if element:
-                    text = element.get_attribute('title') or element.text
-                    if text:
-                        rating_match = re.search(r'(\d+\.?\d*)\s+out of\s+5', text)
-                        if rating_match:
-                            return rating_match.group(1)
+                    rating_text = element.get_attribute('textContent')
+                    if rating_text:
+                        # 提取数字部分
+                        match = re.search(r'(\d+\.?\d*)\s*out of\s*5', rating_text)
+                        if match:
+                            return match.group(1)
 
+            return 'N/A'
         except Exception as e:
-            logger.warning(f"Error getting rating: {str(e)}")
-
-        return 'N/A'
+            logger.error(f"Error extracting rating: {str(e)}")
+            return 'N/A'
 
     def _get_review_count(self):
-        """获取评论数量"""
         try:
-            # 使用JavaScript获取评论数
-            review_count = self.driver.execute_script("""
-                var reviewElement = document.querySelector('#acrCustomerReviewText');
-                if (reviewElement) {
-                    return reviewElement.textContent;
-                }
-                var altElement = document.querySelector('#reviews-medley-footer .a-size-base');
-                if (altElement) {
-                    return altElement.textContent;
-                }
-                return null;
-            """)
-
-            if review_count:
-                # 提取数字
-                count_match = re.search(r'([\d,]+)', review_count)
-                if count_match:
-                    return count_match.group(1).replace(',', '')
-
-            # 备选方法：尝试其他选择器
-            selectors = [
-                ('CSS_SELECTOR', '#acrCustomerReviewText'),
-                ('CSS_SELECTOR', '#reviews-medley-footer .a-size-base'),
-                ('XPATH', '//span[@id="acrCustomerReviewText"]'),
-                ('CSS_SELECTOR', 'a[data-hook="see-all-reviews-link-foot"]')
+            # 1. 主要选择器
+            review_selectors = [
+                '#acrCustomerReviewText',
+                'span[data-hook="total-review-count"]',
+                '#reviewsMedley .a-size-base.a-color-secondary'
             ]
 
-            for by_method, selector in selectors:
-                element = self.safe_find_element(getattr(By, by_method), selector)
+            for selector in review_selectors:
+                element = self.safe_find_element(By.CSS_SELECTOR, selector)
                 if element:
-                    text = element.text
-                    if text:
-                        count_match = re.search(r'([\d,]+)', text)
-                        if count_match:
-                            return count_match.group(1).replace(',', '')
+                    count_text = element.get_attribute('textContent')
+                    if count_text:
+                        # 提取数字部分
+                        match = re.search(r'([\d,]+)', count_text)
+                        if match:
+                            return match.group(1).replace(',', '')
 
+            return 'N/A'
         except Exception as e:
-            logger.warning(f"Error getting review count: {str(e)}")
-
-        return 'N/A'
+            logger.error(f"Error extracting review count: {str(e)}")
+            return 'N/A'
 
     def _get_product_description(self):
         """获取商品描述"""
@@ -398,14 +416,24 @@ class AmazonScraper:
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
 
+            # 等待价格元素加载 - 增加多个选择器
+            price_loaded = False
+            for selector in ['.a-price', '.a-offscreen', '#priceblock_ourprice']:
+                try:
+                    self.wait.until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, selector))
+                    )
+                    price_loaded = True
+                    break
+                except:
+                    continue
+
+            if not price_loaded:
+                logger.warning("Price element not found, proceeding anyway...")
+
             # 添加短暂滚动以触发动态内容加载
             self.driver.execute_script("window.scrollTo(0, 200)")
             self.random_sleep(1, 2)
-
-            # 确保价格元素已加载
-            self.wait.until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, '.a-price'))
-            )
 
             product_info = {
                 'url': url,

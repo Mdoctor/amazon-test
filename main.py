@@ -1,6 +1,7 @@
 from parallel_scraper import ParallelScraper
 from logger import logger
 import sys
+from config import ScraperConfig
 
 
 def main():
@@ -14,7 +15,7 @@ def main():
         ]
 
         # 创建并行爬虫实例（使用默认CPU核心数或指定数量）
-        parallel_scraper = ParallelScraper(max_workers=4)  # 可以根据需要调整worker数量
+        parallel_scraper = ParallelScraper(ScraperConfig.MAX_WORKERS)
 
         # 运行并行爬虫
         results = parallel_scraper.run_parallel(category_urls)

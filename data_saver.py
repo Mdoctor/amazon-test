@@ -71,9 +71,28 @@ class DataSaver:
     @staticmethod
     def _save_with_formatting(df, full_path):
         """保存Excel文件并设置格式"""
+        # 确保价格列的数据类型为字符串
+        if 'Price' in df.columns:
+            df['Price'] = df['Price'].astype(str)
+
         with pd.ExcelWriter(full_path, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Bestsellers')
             worksheet = writer.sheets['Bestsellers']
+
+            # 获取价格列的索引
+            try:
+                price_col_idx = df.columns.get_loc('Price') + 1  # Excel列从1开始
+
+                # 设置价格列格式为文本，保持原始格式
+                for row in range(2, len(df) + 2):  # 从第2行开始（跳过标题行）
+                    cell = worksheet.cell(row=row, column=price_col_idx)
+                    cell.number_format = '@'  # 设置为文本格式
+
+                # 设置标题行的格式
+                header_cell = worksheet.cell(row=1, column=price_col_idx)
+                header_cell.number_format = '@'
+            except ValueError:
+                logger.warning("Price column not found in DataFrame")
 
             # 自动调整列宽
             for idx, col in enumerate(df.columns):

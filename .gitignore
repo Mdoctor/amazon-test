@@ -1,3 +1,4 @@
 *.xlsx
 .idea/
 /scraper.log
+/logs/
