@@ -1,6 +1,6 @@
 class ScraperConfig:
     HEADLESS = True
-    MAX_PRODUCTS_PER_CATEGORY = 2  # 每个类别爬取的商品数量
+    MAX_PRODUCTS_PER_CATEGORY = 1  # 每个类别爬取的商品数量
     MAX_WORKERS = 4  # 默认并行进程数
     CHUNK_SIZE = 10  # 每个进程处理的产品数量
     WAIT_TIME = 15
@@ -18,10 +18,14 @@ class ScraperConfig:
     ]
 
     PRICE_SELECTORS = [
-        ('CSS_SELECTOR', '.a-price'),
+        ('CSS_SELECTOR', '.a-price .a-offscreen'),
+        ('CSS_SELECTOR', '.a-color-price'),
+        ('CSS_SELECTOR', '#priceblock_ourprice'),
+        ('CSS_SELECTOR', '#priceblock_dealprice'),
+        ('CSS_SELECTOR', '.apexPriceToPay .a-offscreen'),
         ('CSS_SELECTOR', '.a-price .a-price-whole'),
         ('CSS_SELECTOR', '.a-price .a-price-fraction'),
-        ('CSS_SELECTOR', '.a-price .a-offscreen'),
+        ('CSS_SELECTOR', '.a-price'),
         ('XPATH', "//span[contains(@class,'a-price')]"),
         ('XPATH', "//span[contains(@class,'a-price-whole')]"),
         ('XPATH', "//span[contains(@class,'a-price-fraction')]"),
@@ -31,12 +35,16 @@ class ScraperConfig:
     ]
 
     RATING_SELECTORS = [
+        ('CSS_SELECTOR', 'i.a-icon-star .a-icon-alt'),
+        ('CSS_SELECTOR', '#averageCustomerReviews .a-icon-star'),
+        ('CSS_SELECTOR', '#acrPopover .a-size-base.a-color-base'),
+        ('CSS_SELECTOR', '#acrPopover .a-size-base.a-color-base'),
+        ('CSS_SELECTOR', '#acrPopover .a-size-base.a-color-base'),
         ('CSS_SELECTOR', '#acrPopover .a-size-base.a-color-base'),
         ('CSS_SELECTOR', '#averageCustomerReviews .a-icon-star .a-icon-alt'),
         ('XPATH', "//span[@class='a-icon-alt'][contains(text(),'out of 5 stars')]"),
         ('CSS_SELECTOR', 'span[data-hook="rating-out-of-text"]'),
         ('CSS_SELECTOR', '#acrPopover .a-declarative'),
-        ('CSS_SELECTOR', 'i.a-icon-star .a-icon-alt'),
         ('CSS_SELECTOR', 'span.a-size-base.a-color-base'),
         ('CSS_SELECTOR', '[data-action="acrStarsLink-click-metrics"] .a-size-base.a-color-base'),
         ('CSS_SELECTOR', '#acrPopover'),
@@ -49,20 +57,7 @@ class ScraperConfig:
     ]
 
     REVIEW_COUNT_SELECTORS = [
-        ('ID', 'acrCustomerReviewText'),
-        ('CSS_SELECTOR', 'span#acrCustomerReviewText'),
-        ('CSS_SELECTOR', '#acrCustomerReviewLink'),
-        ('XPATH', "//span[@id='acrCustomerReviewText']"),
-        ('CSS_SELECTOR', '[data-hook="total-review-count"]'),
-        ('CSS_SELECTOR', '#acrCustomerReviewText'),
-        ('XPATH', "//span[@id='acrCustomerReviewText']/text()"),
-        ('CSS_SELECTOR', '#reviews-medley-footer .totalReviewCount'),
-        ('XPATH', "//span[contains(@class, 'totalReviewCount')]"),
-        ('XPATH', "//a[contains(@href, '#customerReviews')]//span[contains(text(), 'ratings')]"),
-        ('CSS_SELECTOR', '#acrCustomerReviewText'),
-        ('CSS_SELECTOR', '#reviews-medley-footer .a-size-base'),
-        ('XPATH', '//span[@id="acrCustomerReviewText"]'),
-        ('CSS_SELECTOR', 'a[data-hook="see-all-reviews-link-foot"]')
+        ('ID', 'acrCustomerReviewText')
     ]
 
     DESCRIPTION_SELECTORS = [

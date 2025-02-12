@@ -157,27 +157,24 @@ class AmazonScraper:
 
     def _get_product_price(self):
         try:
-            # 1. 首先尝试获取 apexPriceToPay 中的价格
-            price_element = self.safe_find_element(By.CSS_SELECTOR, '.apexPriceToPay .a-offscreen')
-            if price_element:
-                price_text = price_element.get_attribute('textContent')
+            # 1. 首先尝试获取 a-offscreen 中的完整价格
+            price_elem = self.safe_find_element(By.CSS_SELECTOR, ".a-price .a-offscreen")
+            if price_elem:
+                price_text = price_elem.get_attribute('textContent')
                 if price_text:
-                    return price_text.replace('$', '').replace(',', '').strip()
+                    price = re.search(r'\$([\d,.]+)', price_text)
+                    if price:
+                        return float(price.group(1).replace(',', ''))
 
-            # 2. 备选选择器
-            selectors = [
-                '.a-price .a-offscreen',
-                '#priceblock_ourprice',
-                '#priceblock_dealprice',
-                '.a-price.a-text-price span[aria-hidden="true"]'
-            ]
-
-            for selector in selectors:
-                element = self.safe_find_element(By.CSS_SELECTOR, selector)
-                if element:
-                    price_text = element.get_attribute('textContent')
-                    if price_text:
-                        return price_text.replace('$', '').replace(',', '').strip()
+            # 2. 如果上面方法失败,尝试组合价格部分
+            whole = self.safe_find_element(By.CSS_SELECTOR, ".a-price-whole")
+            fraction = self.safe_find_element(By.CSS_SELECTOR, ".a-price-fraction")
+            if whole and fraction:
+                price_text = f"{whole.text}.{fraction.text}"
+                try:
+                    return float(price_text)
+                except:
+                    pass
 
             return 'N/A'
         except Exception as e:
@@ -186,22 +183,21 @@ class AmazonScraper:
 
     def _get_product_rating(self):
         try:
-            # 1. 直接获取评分文本
-            rating_selectors = [
-                '#acrPopover .a-icon-alt',
-                '.a-icon-star .a-icon-alt',
-                '[data-hook="rating-out-of-text"]'
-            ]
+            # 1. 尝试从星级图标类名中提取
+            star_elem = self.safe_find_element(By.CSS_SELECTOR, "[class*='a-star-']")
+            if star_elem:
+                class_name = star_elem.get_attribute('class')
+                star_match = re.search(r'a-star-(\d-\d|\d)', class_name)
+                if star_match:
+                    rating = star_match.group(1).replace('-', '.')
+                    return float(rating)
 
-            for selector in rating_selectors:
-                element = self.safe_find_element(By.CSS_SELECTOR, selector)
-                if element:
-                    rating_text = element.get_attribute('textContent')
-                    if rating_text:
-                        # 提取数字部分
-                        match = re.search(r'(\d+\.?\d*)\s*out of\s*5', rating_text)
-                        if match:
-                            return match.group(1)
+            # 2. 备选方案:从评分文本中提取
+            rating_text = self.safe_find_element(By.CSS_SELECTOR, "#acrPopover .a-declarative")
+            if rating_text:
+                rating_match = re.search(r'([\d.]+) out of 5', rating_text.get_attribute('textContent'))
+                if rating_match:
+                    return float(rating_match.group(1))
 
             return 'N/A'
         except Exception as e:
@@ -210,22 +206,20 @@ class AmazonScraper:
 
     def _get_review_count(self):
         try:
-            # 1. 主要选择器
-            review_selectors = [
-                '#acrCustomerReviewText',
-                'span[data-hook="total-review-count"]',
-                '#reviewsMedley .a-size-base.a-color-secondary'
-            ]
+            # 1. 直接获取评论计数
+            count_elem = self.safe_find_element(By.CSS_SELECTOR, ".component-rating-count")
+            if count_elem:
+                count_text = count_elem.get_attribute('textContent')
+                if count_text:
+                    return int(count_text.replace(',', ''))
 
-            for selector in review_selectors:
-                element = self.safe_find_element(By.CSS_SELECTOR, selector)
-                if element:
-                    count_text = element.get_attribute('textContent')
-                    if count_text:
-                        # 提取数字部分
-                        match = re.search(r'([\d,]+)', count_text)
-                        if match:
-                            return match.group(1).replace(',', '')
+            # 2. 备选方案:从评论链接文本中提取
+            review_link = self.safe_find_element(By.CSS_SELECTOR, "#acrCustomerReviewText")
+            if review_link:
+                count_text = review_link.get_attribute('textContent')
+                count_match = re.search(r'([\d,]+) ratings?', count_text)
+                if count_match:
+                    return int(count_match.group(1).replace(',', ''))
 
             return 'N/A'
         except Exception as e:
@@ -383,8 +377,8 @@ class AmazonScraper:
                     logger.info(f"Retry attempt {retries}/{max_retries}")
 
                 logger.info(f"Attempting to navigate to URL: {url}")
-                self.driver.get(url)
-                logger.info("Successfully navigated to URL")  # 添加这行
+                self.driver.get(url['url'] if isinstance(url, dict) else url)
+                logger.info("Successfully navigated to URL")
 
                 self.random_sleep()
 
@@ -394,7 +388,7 @@ class AmazonScraper:
                     self.random_sleep(3, 5)
                     continue
 
-                return True  # 页面加载成功且无限流信息
+                return True
 
             except Exception as e:
                 logger.error(f"Error loading page (attempt {retries + 1}/{max_retries}): {str(e)}")
