@@ -1,6 +1,6 @@
 class ScraperConfig:
     HEADLESS = True
-    MAX_PRODUCTS_PER_CATEGORY = 1  # 每个类别爬取的商品数量
+    MAX_PRODUCTS_PER_CATEGORY = 10  # 每个类别爬取的商品数量
     MAX_WORKERS = 4  # 默认并行进程数
     CHUNK_SIZE = 10  # 每个进程处理的产品数量
     WAIT_TIME = 15
