@@ -156,8 +156,46 @@ class AmazonScraper:
         return self.get_text_safely(title_elem)
 
     def _get_product_price(self):
+        """获取商品价格"""
         try:
-            # 1. 首先尝试获取 a-offscreen 中的完整价格
+            # 方案1: 检查第一种价格类型 (带有 apexPriceToPay 的表格形式)
+            price_script = """
+                let apexPrice = document.querySelector('.apexPriceToPay .a-offscreen');
+                if (apexPrice) {
+                    return apexPrice.textContent.trim();
+                }
+                return null;
+            """
+            apex_price = self.driver.execute_script(price_script)
+            if apex_price:
+                price_match = re.search(r'\$?([\d,]+\.?\d*)', apex_price)
+                if price_match:
+                    return float(price_match.group(1).replace(',', ''))
+
+            # 方案2: 检查第二种和第三种价格类型 (带有 priceToPay 类的 div)
+            price_script = """
+                let priceToPayElement = document.querySelector('.priceToPay .a-offscreen');
+                if (priceToPayElement) {
+                    return priceToPayElement.textContent.trim();
+                }
+
+                // 如果没有 offscreen 价格，尝试组合价格部分
+                let priceWhole = document.querySelector('.priceToPay .a-price-whole');
+                let priceFraction = document.querySelector('.priceToPay .a-price-fraction');
+                if (priceWhole && priceFraction) {
+                    return priceWhole.textContent.trim() + '.' + priceFraction.textContent.trim();
+                }
+                return null;
+            """
+            price_to_pay = self.driver.execute_script(price_script)
+            if price_to_pay:
+                # 清理价格文本
+                price_match = re.search(r'\$?([\d,]+\.?\d*)', price_to_pay.replace('\n', ''))
+                if price_match:
+                    return float(price_match.group(1).replace(',', ''))
+
+            # 备选方案：尝试其他常见的价格选择器
+            # 3.1. 首先尝试获取 a-offscreen 中的完整价格
             price_elem = self.safe_find_element(By.CSS_SELECTOR, ".a-price .a-offscreen")
             if price_elem:
                 price_text = price_elem.get_attribute('textContent')
@@ -166,7 +204,7 @@ class AmazonScraper:
                     if price:
                         return float(price.group(1).replace(',', ''))
 
-            # 2. 如果上面方法失败,尝试组合价格部分
+            # 3.2. 如果上面方法失败,尝试组合价格部分
             whole = self.safe_find_element(By.CSS_SELECTOR, ".a-price-whole")
             fraction = self.safe_find_element(By.CSS_SELECTOR, ".a-price-fraction")
             if whole and fraction:
@@ -177,6 +215,7 @@ class AmazonScraper:
                     pass
 
             return 'N/A'
+
         except Exception as e:
             logger.error(f"Error extracting price: {str(e)}")
             return 'N/A'
@@ -184,7 +223,7 @@ class AmazonScraper:
     def _get_product_rating(self):
         try:
             # 1. 尝试从星级图标类名中提取
-            star_elem = self.safe_find_element(By.CSS_SELECTOR, "[class*='a-star-']")
+            star_elem = self.safe_find_element(By.CSS_SELECTOR, "[class*='a-size-base a-color-base']")
             if star_elem:
                 class_name = star_elem.get_attribute('class')
                 star_match = re.search(r'a-star-(\d-\d|\d)', class_name)
@@ -193,7 +232,7 @@ class AmazonScraper:
                     return float(rating)
 
             # 2. 备选方案:从评分文本中提取
-            rating_text = self.safe_find_element(By.CSS_SELECTOR, "#acrPopover .a-declarative")
+            rating_text = self.safe_find_element(By.CSS_SELECTOR, ".a-icon-alt")
             if rating_text:
                 rating_match = re.search(r'([\d.]+) out of 5', rating_text.get_attribute('textContent'))
                 if rating_match:
@@ -205,21 +244,12 @@ class AmazonScraper:
             return 'N/A'
 
     def _get_review_count(self):
+        """获取商品评论数量"""
         try:
-            # 1. 直接获取评论计数
-            count_elem = self.safe_find_element(By.CSS_SELECTOR, ".component-rating-count")
-            if count_elem:
-                count_text = count_elem.get_attribute('textContent')
-                if count_text:
-                    return int(count_text.replace(',', ''))
-
-            # 2. 备选方案:从评论链接文本中提取
-            review_link = self.safe_find_element(By.CSS_SELECTOR, "#acrCustomerReviewText")
-            if review_link:
-                count_text = review_link.get_attribute('textContent')
-                count_match = re.search(r'([\d,]+) ratings?', count_text)
-                if count_match:
-                    return int(count_match.group(1).replace(',', ''))
+            page_text = self.driver.find_element(By.TAG_NAME, 'body').text
+            matches = re.findall(r'(\d+(?:,\d+)?)\s*(?:[^\d\n]*\s+)?ratings?', page_text)
+            if matches:
+                return int(matches[0].replace(',', ''))
 
             return 'N/A'
         except Exception as e:
