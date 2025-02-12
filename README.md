@@ -1,126 +1,125 @@
-# Amazon Best Sellers Scraper
+# Amazon Product Scraper
 
-A robust and efficient web scraper designed to extract product information from Amazon's Best Sellers categories. Built with Python, Selenium, and undetected-chromedriver for reliable data collection.
+A high-performance parallel web scraper for Amazon product data using Python. This scraper is designed to efficiently collect product information from multiple Amazon category pages simultaneously.
 
 ## Features
 
-- Scrapes multiple Amazon Best Sellers categories
-- Extracts detailed product information including:
-  - Title
-  - Price
-  - Rating
-  - Review Count
-  - Product Description
-  - ASIN (Amazon Standard Identification Number)
-- Anti-detection measures implemented
-- Automatic data export to Excel/CSV
+- Parallel scraping using multiple workers
 - Configurable scraping parameters
-- Comprehensive logging system
-- Robust error handling and retry mechanisms
+- Robust error handling and logging
+- Automated web driver management
+- Support for multiple Amazon categories
+- Data persistence capabilities
 
-## Requirements
+## Prerequisites
 
-```
-fake_useragent==2.0.3
-pandas==2.2.3
-selenium==4.28.1
-undetected_chromedriver==3.5.5
-```
-
-## Project Structure
-
-- `main.py` - Entry point of the application
-- `scraper.py` - Core scraping functionality
-- `config.py` - Configuration settings
-- `logger.py` - Logging setup
-- `driver_manager.py` - Selenium WebDriver management
-- `data_saver.py` - Data export functionality
+- Python 3.11+
+- Chrome browser installed
+- Required Python packages (see requirements.txt)
 
 ## Installation
 
 1. Clone the repository:
 ```bash
 git clone <repository-url>
-cd amazon-test
+cd amazon-scraper
 ```
 
-2. Create a virtual environment (recommended):
-```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-3. Install required packages:
+2. Install required packages:
 ```bash
 pip install -r requirements.txt
 ```
+
+## Configuration
+
+The scraper can be configured through `config.py`. Key configuration options include:
+
+- `MAX_WORKERS`: Number of parallel scraping workers
+- `RETRY_COUNT`: Number of retry attempts for failed requests
+- `TIMEOUT`: Request timeout duration
+- `USER_AGENT`: Custom user agent string
+- Other scraping parameters
 
 ## Usage
 
 1. Basic usage:
 ```python
+from parallel_scraper import ParallelScraper
+from config import ScraperConfig
+
+# Initialize scraper
+scraper = ParallelScraper(ScraperConfig.MAX_WORKERS)
+
+# Define target URLs
+category_urls = [
+    "https://www.amazon.com/Best-Sellers-Amazon-Devices-Accessories/zgbs/amazon-devices/",
+    "https://www.amazon.com/Best-Sellers-Amazon-Renewed/zgbs/amazon-renewed/"
+]
+
+# Run scraper
+results = scraper.run_parallel(category_urls)
+```
+
+2. Run from command line:
+```bash
 python main.py
 ```
 
-2. Configure category URLs in `main.py`:
-```python
-category_urls = [
-    "https://www.amazon.com/Best-Sellers-Amazon-Devices-Accessories/zgbs/amazon-devices/ref=zg_bs_nav_amazon-devices_0",
-    "https://www.amazon.com/Best-Sellers-Amazon-Renewed/zgbs/amazon-renewed/ref=zg_bs_nav_amazon-renewed_0",
-    # Add more categories as needed
-]
+## Project Structure
+
 ```
-
-3. Adjust scraping parameters in `config.py` if needed.
-
-## Configuration
-
-You can customize various parameters in `config.py`:
-
-- `WAIT_TIME` - Maximum wait time for elements
-- `MIN_SLEEP` - Minimum delay between actions
-- `MAX_SLEEP` - Maximum delay between actions
-- `SCROLL_STEPS` - Number of page scrolls
-- Various selector configurations for different elements
+amazon-scraper/
+├── main.py              # Main entry point
+├── parallel_scraper.py  # Parallel scraping implementation
+├── scraper.py          # Core scraping logic
+├── config.py           # Configuration settings
+├── logger.py           # Logging setup
+├── driver_manager.py   # Webdriver management
+├── data_saver.py       # Data persistence
+├── requirements.txt    # Project dependencies
+└── README.md          # Project documentation
+```
 
 ## Output
 
-The scraper saves data in two formats:
+The scraper collects the following data for each product:
+- Product details
+- Pricing information
+- Category information
+- Other relevant metadata
 
-1. Excel (.xlsx) - Primary output format with formatted columns
-2. CSV - Backup format if Excel export fails
-
-Files are saved with the following naming pattern:
-`{category_name}_bestsellers_{timestamp}.xlsx`
-
-## Logging
-
-- Logs are saved to `scraper.log`
-- Console output is also provided
-- Includes detailed information about:
-  - Scraping progress
-  - Errors and exceptions
-  - Success/failure statistics
-
-## Anti-Detection Features
-
-- Uses undetected-chromedriver
-- Random user agent generation
-- Configurable delays between actions
-- Browser fingerprint manipulation
-- Incognito mode support
+Results are logged and can be saved in various formats.
 
 ## Error Handling
 
-- Automatic retry mechanism for failed requests
-- Throttling detection and handling
-- Multiple fallback selectors for each element
-- Graceful degradation for missing data
+The scraper includes robust error handling:
+- Automatic retry for failed requests
+- Detailed error logging
+- Exception management for common scraping issues
+
+## Logging
+
+Comprehensive logging is implemented through `logger.py`:
+- Success/failure statistics
+- Error details
+- Scraping progress updates
 
 ## Contributing
 
-Feel free to submit issues, fork the repository, and create pull requests for any improvements.
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+
+[Add your license information here]
 
 ## Disclaimer
 
-This tool is for educational purposes only. Make sure to comply with Amazon's terms of service and robots.txt when using this scraper.
+This scraper is for educational purposes only. Ensure compliance with Amazon's terms of service and robots.txt when using this tool.
+
+## Support
+
+For issues, questions, or contributions, please create an issue in the repository.
