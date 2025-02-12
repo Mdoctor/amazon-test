@@ -493,34 +493,116 @@ class AmazonScraper:
             # 获取类别名称
             self.category_name = self._get_category_name(category_url)
 
-            # 使用JavaScript获取所有产品链接
-            product_links = set()
-            for selector in ScraperConfig.PRODUCT_LINK_SELECTORS:
-                try:
-                    links = self.driver.execute_script(f"""
-                        return Array.from(document.querySelectorAll("{selector}"))
-                            .filter(el => el.href && el.href.includes('/dp/'))
-                            .map(el => {{
-                                let match = el.href.match(/\/dp\/([A-Z0-9]{{10}})/);
-                                return match ? 'https://www.amazon.com/dp/' + match[1] : null;
-                            }})
-                            .filter(url => url);
-                    """)
-                    product_links.update(links)
+            # 使用JavaScript获取所有产品链接及其排名
+            ranked_products = []
+            script = """
+                let products = [];
+                let rankElements = document.querySelectorAll('.zg-bdg-text, [class*="zg-badge-text"]');
 
-                    if len(product_links) >= ScraperConfig.MAX_PRODUCTS_PER_CATEGORY:
-                        break
-                except Exception as e:
-                    logger.debug(f"Error with selector {selector}: {str(e)}")
-                    continue
+                rankElements.forEach(rankElem => {
+                    let rank = parseInt(rankElem.textContent.match(/\\d+/)[0]);
+                    let productCard = rankElem.closest('[class*="zg-item"], [class*="zg-grid-item"]');
+                    if (productCard) {
+                        let link = productCard.querySelector('a[href*="/dp/"]');
+                        if (link && link.href) {
+                            let match = link.href.match(/\/dp\/([A-Z0-9]{10})/);
+                            if (match) {
+                                products.push({
+                                    rank: rank,
+                                    url: 'https://www.amazon.com/dp/' + match[1]
+                                });
+                            }
+                        }
+                    }
+                });
 
-            unique_links = list(product_links)[:ScraperConfig.MAX_PRODUCTS_PER_CATEGORY]
-            logger.info(f"Found {len(unique_links)} unique product links")
+                // 按排名排序
+                products.sort((a, b) => a.rank - b.rank);
+                return products;
+            """
+
+            try:
+                ranked_products = self.driver.execute_script(script)
+            except Exception as e:
+                logger.error(f"Error executing JavaScript for ranked products: {str(e)}")
+                # 如果JavaScript方法失败，使用备选方法
+                ranked_products = self._get_ranked_products_fallback()
+
+            if not ranked_products:
+                logger.warning("No ranked products found with primary method, trying fallback...")
+                ranked_products = self._get_ranked_products_fallback()
+
+            # 确保结果按排名排序并限制数量
+            ranked_products = sorted(ranked_products, key=lambda x: x['rank'])[:ScraperConfig.MAX_PRODUCTS_PER_CATEGORY]
+
+            # 提取URL列表
+            unique_links = [product['url'] for product in ranked_products]
+
+            logger.info(f"Found {len(unique_links)} ranked products")
+            for product in ranked_products:
+                logger.info(f"Rank {product['rank']}: {product['url']}")
+
             return unique_links
 
         except Exception as e:
             logger.error(f"Error getting bestsellers: {str(e)}")
             return []
+
+    def _get_ranked_products_fallback(self):
+        """备选方法：使用传统的DOM遍历获取排名产品"""
+        ranked_products = []
+        try:
+            # 尝试不同的排名和产品容器选择器
+            rank_selectors = [
+                '.zg-bdg-text',
+                '[class*="zg-badge-text"]',
+                '.zg-ranking',
+                '[class*="zg-rank"]'
+            ]
+
+            for rank_selector in rank_selectors:
+                rank_elements = self.driver.find_elements(By.CSS_SELECTOR, rank_selector)
+                for rank_elem in rank_elements:
+                    try:
+                        # 获取排名
+                        rank_text = rank_elem.text.strip()
+                        rank_match = re.search(r'\d+', rank_text)
+                        if not rank_match:
+                            continue
+                        rank = int(rank_match.group())
+
+                        # 从排名元素向上查找产品容器
+                        product_card = rank_elem
+                        for _ in range(5):  # 最多向上查找5层父元素
+                            product_card = product_card.find_element(By.XPATH, '..')
+                            link = None
+                            try:
+                                link = product_card.find_element(By.CSS_SELECTOR, 'a[href*="/dp/"]')
+                                if link:
+                                    break
+                            except:
+                                continue
+
+                        if link:
+                            url = link.get_attribute('href')
+                            match = re.search(r'/dp/([A-Z0-9]{10})', url)
+                            if match:
+                                ranked_products.append({
+                                    'rank': rank,
+                                    'url': f'https://www.amazon.com/dp/{match.group(1)}'
+                                })
+
+                    except Exception as e:
+                        logger.debug(f"Error processing individual rank element: {str(e)}")
+                        continue
+
+                if ranked_products:
+                    break
+
+        except Exception as e:
+            logger.error(f"Error in fallback ranked products method: {str(e)}")
+
+        return ranked_products
 
     def run(self, category_url=None):
         """运行爬虫"""
