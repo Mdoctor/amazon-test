@@ -2,3 +2,4 @@ fake_useragent==2.0.3
 pandas==2.2.3
 selenium==4.28.1
 undetected_chromedriver==3.5.5
+openpyxl==3.1.5

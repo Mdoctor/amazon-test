@@ -19,16 +19,22 @@ class DataSaver:
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             filename = f'{safe_category_name}_bestsellers_{timestamp}.xlsx'
 
-            # 创建DataFrame
+            # 创建DataFrame，包含所有字段
             df = pd.DataFrame([
                 {
                     'Rank': i + 1,
+                    'ASIN': p['asin'],
                     'Title': p['title'],
+                    'Brand': p['brand'],
                     'Price': p['price'],
                     'Rating': p['rating'],
                     'Review Count': p['review_count'],
-                    'ASIN': p['asin'],
-                    'Description': p['description']
+                    'Availability': p['availability'],
+                    'Description': p['description'],
+                    'Image URL': p['image_url'],
+                    'Product URL': p['url'],
+                    'Category': p['category'],
+                    'Timestamp': p['timestamp']
                 }
                 for i, p in enumerate(products)
             ])
@@ -75,6 +81,7 @@ class DataSaver:
                     df[col].astype(str).apply(len).max(),
                     len(col)
                 )
+                # 限制最大列宽为50个字符
                 worksheet.column_dimensions[chr(65 + idx)].width = min(max_length + 2, 50)
 
     @staticmethod

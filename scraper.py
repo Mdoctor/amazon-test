@@ -52,50 +52,278 @@ class AmazonScraper:
             logger.warning(f"Error finding element {value}: {str(e)}")
             return None
 
+    def find_element_with_retry(self, selectors, max_retries=3):
+        """使用多个选择器和重试机制查找元素"""
+        for _ in range(max_retries):
+            for by_method, selector in selectors:
+                try:
+                    element = self.wait.until(
+                        EC.presence_of_element_located((getattr(By, by_method), selector))
+                    )
+                    if element and element.is_displayed():
+                        return element
+                except:
+                    continue
+            self.random_sleep(1, 2)
+        return None
+
+    def find_elements_with_retry(self, selectors, max_retries=3):
+        """使用多个选择器和重试机制查找多个元素"""
+        for _ in range(max_retries):
+            for by_method, selector in selectors:
+                try:
+                    elements = self.driver.find_elements(getattr(By, by_method), selector)
+                    if elements:
+                        return elements
+                except:
+                    continue
+            self.random_sleep(1, 2)
+        return []
+
+    def get_text_safely(self, element):
+        """安全地获取元素文本"""
+        if element:
+            try:
+                text = element.get_attribute('textContent') or element.text
+                return text.strip()
+            except:
+                pass
+        return 'N/A'
+
+    def clean_price(self, price_text):
+        """清理和标准化价格文本"""
+        if price_text and price_text != 'N/A':
+            try:
+                # 尝试直接从价格文本中提取数字
+                price_match = re.search(r'(\d+)\.?(\d*)', price_text)
+                if price_match:
+                    whole = price_match.group(1)
+                    fraction = price_match.group(2) or '00'
+                    return float(f"{whole}.{fraction}")
+
+                # 如果上面失败，尝试分别查找整数和小数部分
+                whole_elem = self.find_element_with_retry([
+                    ('CSS_SELECTOR', '.a-price-whole'),
+                    ('XPATH', "//span[contains(@class,'a-price-whole')]")
+                ])
+                fraction_elem = self.find_element_with_retry([
+                    ('CSS_SELECTOR', '.a-price-fraction'),
+                    ('XPATH', "//span[contains(@class,'a-price-fraction')]")
+                ])
+
+                if whole_elem:
+                    whole = re.sub(r'[^\d]', '', self.get_text_safely(whole_elem))
+                    fraction = re.sub(r'[^\d]', '', self.get_text_safely(fraction_elem)) if fraction_elem else '00'
+                    return float(f"{whole}.{fraction}")
+
+            except Exception as e:
+                logger.warning(f"Error cleaning price: {str(e)}")
+        return 'N/A'
+
     def _get_product_title(self):
         """获取商品标题"""
-        for by_method, selector in ScraperConfig.TITLE_SELECTORS:
-            title_elem = self.safe_find_element(getattr(By, by_method), selector)
-            if title_elem and title_elem.text.strip():
-                return title_elem.text.strip()
-        return 'N/A'
+        title_elem = self.find_element_with_retry(ScraperConfig.TITLE_SELECTORS)
+        return self.get_text_safely(title_elem)
 
     def _get_product_price(self):
         """获取商品价格"""
-        for by_method, selector in ScraperConfig.PRICE_SELECTORS:
-            price_elem = self.safe_find_element(getattr(By, by_method), selector)
-            if price_elem and price_elem.text.strip():
-                return price_elem.text.strip()
-        return 'N/A'
+        price_elem = self.find_element_with_retry(ScraperConfig.PRICE_SELECTORS)
+        price_text = self.get_text_safely(price_elem)
+        return self.clean_price(price_text)
 
     def _get_product_rating(self):
         """获取商品评分"""
-        for by_method, selector in ScraperConfig.RATING_SELECTORS:
-            rating_elem = self.safe_find_element(getattr(By, by_method), selector)
-            if rating_elem and rating_elem.text.strip():
-                rating_text = rating_elem.text.strip()
-                rating_match = re.search(r'(\d+\.?\d*)', rating_text)
+        try:
+            # 尝试获取星级评分
+            rating_script = self.driver.execute_script("""
+                var ratingElement = document.querySelector('#acrPopover');
+                if (ratingElement) {
+                    return ratingElement.getAttribute('title');
+                }
+                return null;
+            """)
+
+            if rating_script:
+                rating_match = re.search(r'(\d+\.?\d*)\s+out of\s+5', rating_script)
                 if rating_match:
                     return rating_match.group(1)
+
+            # 备选方法：尝试其他选择器
+            selectors = [
+                ('CSS_SELECTOR', '#acrPopover'),
+                ('CSS_SELECTOR', 'span[data-hook="rating-out-of-text"]'),
+                ('CSS_SELECTOR', '.a-icon-star .a-icon-alt'),
+                ('XPATH', '//span[@class="a-icon-alt"]')
+            ]
+
+            for by_method, selector in selectors:
+                element = self.safe_find_element(getattr(By, by_method), selector)
+                if element:
+                    text = element.get_attribute('title') or element.text
+                    if text:
+                        rating_match = re.search(r'(\d+\.?\d*)\s+out of\s+5', text)
+                        if rating_match:
+                            return rating_match.group(1)
+
+        except Exception as e:
+            logger.warning(f"Error getting rating: {str(e)}")
+
         return 'N/A'
 
     def _get_review_count(self):
         """获取评论数量"""
-        for by_method, selector in ScraperConfig.REVIEW_COUNT_SELECTORS:
-            review_elem = self.safe_find_element(getattr(By, by_method), selector)
-            if review_elem and review_elem.text.strip():
-                count_text = review_elem.text.strip()
-                count_match = re.search(r'([\d,]+)', count_text)
+        try:
+            # 使用JavaScript获取评论数
+            review_count = self.driver.execute_script("""
+                var reviewElement = document.querySelector('#acrCustomerReviewText');
+                if (reviewElement) {
+                    return reviewElement.textContent;
+                }
+                var altElement = document.querySelector('#reviews-medley-footer .a-size-base');
+                if (altElement) {
+                    return altElement.textContent;
+                }
+                return null;
+            """)
+
+            if review_count:
+                # 提取数字
+                count_match = re.search(r'([\d,]+)', review_count)
                 if count_match:
-                    return count_match.group(1)
+                    return count_match.group(1).replace(',', '')
+
+            # 备选方法：尝试其他选择器
+            selectors = [
+                ('CSS_SELECTOR', '#acrCustomerReviewText'),
+                ('CSS_SELECTOR', '#reviews-medley-footer .a-size-base'),
+                ('XPATH', '//span[@id="acrCustomerReviewText"]'),
+                ('CSS_SELECTOR', 'a[data-hook="see-all-reviews-link-foot"]')
+            ]
+
+            for by_method, selector in selectors:
+                element = self.safe_find_element(getattr(By, by_method), selector)
+                if element:
+                    text = element.text
+                    if text:
+                        count_match = re.search(r'([\d,]+)', text)
+                        if count_match:
+                            return count_match.group(1).replace(',', '')
+
+        except Exception as e:
+            logger.warning(f"Error getting review count: {str(e)}")
+
         return 'N/A'
 
     def _get_product_description(self):
         """获取商品描述"""
-        for by_method, selector in ScraperConfig.DESCRIPTION_SELECTORS:
-            desc_elem = self.safe_find_element(getattr(By, by_method), selector)
-            if desc_elem and desc_elem.text.strip():
-                return desc_elem.text.strip()[:500]  # 限制描述长度
+        desc_elem = self.find_element_with_retry(ScraperConfig.DESCRIPTION_SELECTORS)
+        description = self.get_text_safely(desc_elem)
+        return description[:1000] if description != 'N/A' else 'N/A'
+
+    def _get_product_image(self):
+        """获取商品主图"""
+        image_elem = self.find_element_with_retry(ScraperConfig.IMAGE_SELECTORS)
+        if image_elem:
+            try:
+                return image_elem.get_attribute('src')
+            except:
+                pass
+        return 'N/A'
+
+    def _get_product_brand(self):
+        """获取商品品牌"""
+        try:
+            brand_elem = self.find_element_with_retry(ScraperConfig.BRAND_SELECTORS)
+            if brand_elem:
+                brand_text = self.get_text_safely(brand_elem)
+                if brand_text and brand_text != 'N/A':
+                    # 改进品牌文本清理逻辑
+                    brand_text = brand_text.replace('Brand:', '').replace('Visit the', '').replace('Store', '')
+                    # 移除多余的空格和重复的词
+                    words = [word.strip() for word in brand_text.split() if word.strip()]
+                    # 移除重复的词
+                    unique_words = []
+                    for word in words:
+                        if word not in unique_words:
+                            unique_words.append(word)
+                    brand_text = ' '.join(unique_words)
+
+                    if brand_text:
+                        return brand_text
+
+                # 如果上面的方法失败，尝试获取href属性中的品牌信息
+                brand_url = brand_elem.get_attribute('href')
+                if brand_url:
+                    brand_match = re.search(r'/stores/([^/]+)/', brand_url)
+                    if brand_match:
+                        brand_name = brand_match.group(1).replace('-', ' ').title()
+                        # 同样处理可能的重复
+                        words = [word.strip() for word in brand_name.split() if word.strip()]
+                        unique_words = []
+                        for word in words:
+                            if word not in unique_words:
+                                unique_words.append(word)
+                        return ' '.join(unique_words)
+
+            # 尝试从页面标题中提取品牌
+            title = self._get_product_title()
+            if title != 'N/A':
+                first_word = title.split()[0]
+                if len(first_word) > 2:  # 避免像"A"、"An"这样的词
+                    return first_word
+
+        except Exception as e:
+            logger.warning(f"Error getting brand: {str(e)}")
+
+        return 'N/A'
+
+    def _get_product_availability(self):
+        """获取商品可用性状态"""
+        try:
+            # 使用JavaScript获取库存状态
+            availability = self.driver.execute_script("""
+                var availabilityElement = document.querySelector('#availability span');
+                if (availabilityElement) {
+                    return availabilityElement.textContent.trim();
+                }
+                var merchantElement = document.querySelector('#merchantInfoFeature');
+                if (merchantElement) {
+                    return merchantElement.textContent.trim();
+                }
+                var buyboxElement = document.querySelector('#buybox-see-all-buying-choices');
+                if (buyboxElement) {
+                    return buyboxElement.textContent.trim();
+                }
+                return null;
+            """)
+
+            if availability:
+                return availability.strip()
+
+            # 备选方法：尝试其他选择器
+            selectors = [
+                ('CSS_SELECTOR', '#availability span'),
+                ('CSS_SELECTOR', '#merchantInfoFeature'),
+                ('CSS_SELECTOR', '#buybox-see-all-buying-choices'),
+                ('XPATH', '//div[@id="availability"]//span[@class="a-size-medium a-color-success"]'),
+                ('CSS_SELECTOR', '#outOfStock .a-color-price')
+            ]
+
+            for by_method, selector in selectors:
+                element = self.safe_find_element(getattr(By, by_method), selector)
+                if element:
+                    text = element.text.strip()
+                    if text:
+                        return text
+
+            # 检查是否缺货
+            out_of_stock = self.safe_find_element(By.CSS_SELECTOR, '#outOfStock')
+            if out_of_stock:
+                return "Currently unavailable"
+
+        except Exception as e:
+            logger.warning(f"Error getting availability: {str(e)}")
+
         return 'N/A'
 
     def _extract_asin(self, url):
@@ -124,14 +352,14 @@ class AmazonScraper:
                 if retries > 0:
                     logger.info(f"Retry attempt {retries}/{max_retries}")
 
-                logger.info(f"Attempting to navigate to URL: {url}")  # 添加这行
+                logger.info(f"Attempting to navigate to URL: {url}")
                 self.driver.get(url)
                 logger.info("Successfully navigated to URL")  # 添加这行
 
                 self.random_sleep()
 
                 if self._check_and_handle_throttling():
-                    logger.info("Throttling detected, will retry...")  # 添加这行
+                    logger.info("Throttling detected, will retry...")
                     retries += 1
                     self.random_sleep(3, 5)
                     continue
@@ -150,18 +378,42 @@ class AmazonScraper:
     def extract_product_info(self, url):
         """提取商品详细信息"""
         try:
-            # 使用新的重试逻辑加载页面
             if not self._handle_page_with_retry(url):
                 return None
 
+            # 等待页面主要内容加载
+            self.wait.until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
+
+            # 添加短暂滚动以触发动态内容加载
+            self.driver.execute_script("window.scrollTo(0, 200)")
+            self.random_sleep(1, 2)
+
+            # 确保价格元素已加载
+            self.wait.until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, '.a-price'))
+            )
+
             product_info = {
+                'url': url,
+                'asin': self._extract_asin(url),
                 'title': self._get_product_title(),
                 'price': self._get_product_price(),
                 'rating': self._get_product_rating(),
                 'review_count': self._get_review_count(),
                 'description': self._get_product_description(),
-                'asin': self._extract_asin(url)
+                'image_url': self._get_product_image(),
+                'brand': self._get_product_brand(),
+                'availability': self._get_product_availability(),
+                'category': self.category_name,
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
             }
+
+            # 验证关键字段
+            if product_info['title'] == 'N/A' and product_info['price'] == 'N/A':
+                logger.warning(f"Failed to extract essential information for {url}")
+                return None
 
             return product_info
 
@@ -171,6 +423,18 @@ class AmazonScraper:
 
     def _get_category_name(self, category_url):
         """获取类别名称"""
+        # 首先尝试从URL中提取类别名称
+        if category_url:
+            # 匹配 Best-Sellers- 后面的部分，直到下一个斜杠
+            match = re.search(r'Best-Sellers-(.*?)/zgbs', category_url)
+            if match:
+                category_name = match.group(1)
+                # 解码URL编码的字符
+                category_name = unquote(category_name)
+                # 如果类别名称包含多个连字符分隔的词，保持原样
+                return category_name
+
+        # 如果从URL无法获取，尝试从页面元素获取
         for selector in ScraperConfig.CATEGORY_NAME_SELECTORS:
             try:
                 category_elem = self.safe_find_element(By.XPATH, selector)
@@ -179,51 +443,44 @@ class AmazonScraper:
             except:
                 continue
 
-        # 如果无法从页面获取类别名称，尝试从URL提取
-        match = re.search(r'Best-Sellers-([^/]+)', category_url)
-        if match:
-            return unquote(match.group(1)).replace('-', ' ')
+        # 如果都失败了，返回默认值
         return "Amazon_Bestsellers"
 
     def get_bestsellers(self, category_url=None):
         """获取畅销商品列表"""
         try:
             url = category_url or "https://www.amazon.com/Best-Sellers/zgbs/"
-
-            # 使用新的重试逻辑加载页面
             if not self._handle_page_with_retry(url):
                 return []
 
+            # 执行页面滚动
             self.scroll_page()
 
             # 获取类别名称
             self.category_name = self._get_category_name(category_url)
 
-            product_links = []
+            # 使用JavaScript获取所有产品链接
+            product_links = set()
             for selector in ScraperConfig.PRODUCT_LINK_SELECTORS:
                 try:
-                    elements = self.driver.execute_script(f"""
+                    links = self.driver.execute_script(f"""
                         return Array.from(document.querySelectorAll("{selector}"))
-                            .filter(el => el.href && el.href.includes('/dp/'));
+                            .filter(el => el.href && el.href.includes('/dp/'))
+                            .map(el => {{
+                                let match = el.href.match(/\/dp\/([A-Z0-9]{{10}})/);
+                                return match ? 'https://www.amazon.com/dp/' + match[1] : null;
+                            }})
+                            .filter(url => url);
                     """)
+                    product_links.update(links)
 
-                    for element in elements:
-                        href = element.get_attribute('href')
-                        if href and '/dp/' in href:
-                            asin_match = re.search(r'/dp/([A-Z0-9]{10})', href)
-                            if asin_match:
-                                base_url = f"https://www.amazon.com/dp/{asin_match.group(1)}"
-                                if base_url not in product_links:
-                                    product_links.append(base_url)
-
-                    if len(product_links) >= 10:
+                    if len(product_links) >= ScraperConfig.MAX_PRODUCTS_PER_CATEGORY:
                         break
-
                 except Exception as e:
-                    logger.debug(f"Selector {selector} failed: {str(e)}")
+                    logger.debug(f"Error with selector {selector}: {str(e)}")
                     continue
 
-            unique_links = list(dict.fromkeys(product_links))[:10]
+            unique_links = list(product_links)[:ScraperConfig.MAX_PRODUCTS_PER_CATEGORY]
             logger.info(f"Found {len(unique_links)} unique product links")
             return unique_links
 
