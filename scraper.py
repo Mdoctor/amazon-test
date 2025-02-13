@@ -257,10 +257,181 @@ class AmazonScraper:
             return 'N/A'
 
     def _get_product_description(self):
-        """获取商品描述"""
-        desc_elem = self.find_element_with_retry(ScraperConfig.DESCRIPTION_SELECTORS)
-        description = self.get_text_safely(desc_elem)
-        return description[:1000] if description != 'N/A' else 'N/A'
+        """获取商品完整描述信息"""
+        try:
+            description_parts = []
+            seen_content = set()  # 用于去重
+
+            # 1. 使用 JavaScript 获取描述内容
+            js_script = """
+                function getDescription() {
+                    let descriptions = [];
+
+                    // 获取产品描述
+                    let productDesc = document.getElementById('productDescription');
+                    if (productDesc) descriptions.push({type: 'Product Description', content: productDesc.innerText});
+
+                    // 获取要点描述
+                    let bullets = document.getElementById('feature-bullets');
+                    if (bullets) descriptions.push({type: 'Key Features', content: bullets.innerText});
+
+                    // 获取技术细节
+                    let techDetails = document.getElementById('productDetails_techSpec_section_1');
+                    if (techDetails) descriptions.push({type: 'Technical Details', content: techDetails.innerText});
+
+                    // 获取产品详情
+                    let productDetails = document.getElementById('detailBullets_feature_div');
+                    if (productDetails) descriptions.push({type: 'Product Details', content: productDetails.innerText});
+
+                    // 获取A+内容
+                    let aplus = document.getElementById('aplus_feature_div');
+                    if (aplus) descriptions.push({type: 'Additional Information', content: aplus.innerText});
+
+                    // 获取产品概述
+                    let overview = document.getElementById('productOverview_feature_div');
+                    if (overview) descriptions.push({type: 'Product Overview', content: overview.innerText});
+
+                    return descriptions;
+                }
+                return getDescription();
+            """
+
+            js_results = self.driver.execute_script(js_script)
+            if js_results:
+                for result in js_results:
+                    if result['content'] and result['content'].strip():
+                        content = self._clean_description_text(result['content'])
+                        if content and content not in seen_content:
+                            description_parts.append(f"{result['type']}:\n{content}")
+                            seen_content.add(content)
+
+            # 2. 使用配置的选择器获取描述内容
+            for by_method, selector in ScraperConfig.DESCRIPTION_SELECTORS:
+                try:
+                    elements = self.driver.find_elements(getattr(By, by_method), selector)
+                    for element in elements:
+                        try:
+                            # 获取元素的文本内容
+                            content = element.get_attribute('textContent') or element.text
+                            if content:
+                                content = self._clean_description_text(content)
+                                if content and content not in seen_content:
+                                    # 尝试获取内容类型（标题或标签）
+                                    content_type = self._get_content_type(element)
+                                    if content_type:
+                                        description_parts.append(f"{content_type}:\n{content}")
+                                    else:
+                                        description_parts.append(content)
+                                    seen_content.add(content)
+                        except:
+                            continue
+                except:
+                    continue
+
+            # 3. 组合并格式化描述内容
+            if description_parts:
+                # 使用双换行符分隔不同部分
+                final_description = "\n\n".join(description_parts)
+                # 限制长度但保持完整段落
+                if len(final_description) > 32000:  # 设置一个合理的最大长度
+                    final_description = self._truncate_to_last_complete_section(final_description, 32000)
+                return final_description
+
+            return 'N/A'
+
+        except Exception as e:
+            logger.error(f"Error getting product description: {str(e)}")
+            return 'N/A'
+
+    def _clean_description_text(self, text):
+        """清理和格式化描述文本"""
+        if not text:
+            return None
+
+        try:
+            # 基本清理
+            text = text.strip()
+            # 替换多个空白字符为单个空格
+            text = re.sub(r'\s+', ' ', text)
+            # 替换多个换行为双换行
+            text = re.sub(r'\n\s*\n\s*\n*', '\n\n', text)
+            # 移除特殊字符但保留基本标点
+            text = re.sub(r'[^\w\s.,;:!?()\'"\-–—/\n]', '', text)
+            # 移除重复的标点符号
+            text = re.sub(r'([.,!?])\1+', r'\1', text)
+            # 确保段落之间有适当的间距
+            text = re.sub(r'([.!?])\s*(\w)', r'\1\n\2', text)
+
+            # 移除常见的无用文本
+            useless_patterns = [
+                r'Read more',
+                r'Show more',
+                r'See more',
+                r'Click to open expanded view',
+                r'Scroll left/right to see more',
+                r'Roll over image to zoom in',
+            ]
+            for pattern in useless_patterns:
+                text = re.sub(pattern, '', text, flags=re.IGNORECASE)
+
+            # 最终清理
+            text = text.strip()
+            return text if text else None
+
+        except Exception as e:
+            logger.warning(f"Error cleaning description text: {str(e)}")
+            return text.strip() if text else None
+
+    def _get_content_type(self, element):
+        """获取描述内容的类型"""
+        try:
+            # 检查元素的ID和class来确定内容类型
+            element_id = element.get_attribute('id') or ''
+            element_class = element.get_attribute('class') or ''
+
+            type_indicators = {
+                'feature-bullets': 'Key Features',
+                'productDescription': 'Product Description',
+                'technical': 'Technical Details',
+                'detail': 'Product Details',
+                'specification': 'Specifications',
+                'overview': 'Product Overview',
+                'aplus': 'Additional Information',
+                'important': 'Important Information'
+            }
+
+            for indicator, content_type in type_indicators.items():
+                if indicator in element_id.lower() or indicator in element_class.lower():
+                    return content_type
+
+            # 检查父元素
+            parent = element.find_element(By.XPATH, '..')
+            parent_id = parent.get_attribute('id') or ''
+            parent_class = parent.get_attribute('class') or ''
+
+            for indicator, content_type in type_indicators.items():
+                if indicator in parent_id.lower() or indicator in parent_class.lower():
+                    return content_type
+
+            return None
+
+        except:
+            return None
+
+    def _truncate_to_last_complete_section(self, text, max_length):
+        """在不切断段落的情况下截断文本"""
+        if len(text) <= max_length:
+            return text
+
+        # 找到最后一个完整段落的位置
+        last_paragraph = max_length
+        for separator in ['\n\n', '. ', '! ', '? ']:
+            pos = text.rfind(separator, 0, max_length)
+            if pos > 0:
+                last_paragraph = pos + len(separator)
+                break
+
+        return text[:last_paragraph].strip()
 
     def _get_product_image(self):
         """获取商品主图"""

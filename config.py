@@ -1,5 +1,5 @@
 class ScraperConfig:
-    HEADLESS = False
+    HEADLESS = True
     MAX_PRODUCTS_PER_CATEGORY = 10  # 每个类别爬取的商品数量
     MAX_WORKERS = 4  # 最大并行进程数
     CHUNK_SIZE = 10  # 每个进程处理的产品数量
@@ -62,12 +62,73 @@ class ScraperConfig:
     ]
 
     DESCRIPTION_SELECTORS = [
+        # 产品描述区域
         ('ID', 'productDescription'),
-        ('CSS_SELECTOR', '#feature-bullets .a-list-item'),
+        ('CSS_SELECTOR', '#productDescription'),
+        ('CSS_SELECTOR', '#productDescription_feature_div'),
+
+        # 重要特性列表
+        ('ID', 'feature-bullets'),
         ('CSS_SELECTOR', '#feature-bullets'),
-        ('CSS_SELECTOR', '.a-unordered-list .a-list-item'),
-        ('CSS_SELECTOR', '#productDescription p'),
-        ('XPATH', "//div[@id='feature-bullets']//li")
+        ('CSS_SELECTOR', '#feature-bullets .a-list-item'),
+
+        # 产品详情区域
+        ('ID', 'detailBullets_feature_div'),
+        ('CSS_SELECTOR', '#detailBullets_feature_div'),
+        ('CSS_SELECTOR', '#detailBulletsWrapper_feature_div'),
+
+        # 技术详情
+        ('ID', 'technicalSpecifications_feature_div'),
+        ('CSS_SELECTOR', '#technicalSpecifications_feature_div'),
+        ('CSS_SELECTOR', '#productDetails_techSpec_section_1'),
+        ('CSS_SELECTOR', '#productDetails_techSpec_section_2'),
+
+        # 附加产品信息
+        ('ID', 'productDetails_feature_div'),
+        ('CSS_SELECTOR', '#productDetails_feature_div'),
+        ('CSS_SELECTOR', '#prodDetails'),
+
+        # 产品信息表格
+        ('CSS_SELECTOR', '#productDetails_db_sections'),
+        ('CSS_SELECTOR', '.content-grid-block'),
+        ('CSS_SELECTOR', '#aplus'),
+        ('CSS_SELECTOR', '#aplus_feature_div'),
+
+        # 商品概述
+        ('CSS_SELECTOR', '#featurebullets_feature_div'),
+        ('CSS_SELECTOR', '#feature-bullets .a-unordered-list'),
+
+        # 关于这个商品区域
+        ('CSS_SELECTOR', '#aboutTheProduct'),
+        ('CSS_SELECTOR', '#aboutTheProduct_feature_div'),
+
+        # 产品规格
+        ('CSS_SELECTOR', '#productSpecification'),
+        ('CSS_SELECTOR', '#productSpecification_feature_div'),
+
+        # 商品详情表格
+        ('CSS_SELECTOR', '.detail-bullets'),
+        ('CSS_SELECTOR', '.detail-bullets-wrapper'),
+
+        # 其他可能包含描述的区域
+        ('CSS_SELECTOR', '.product-facts'),
+        ('CSS_SELECTOR', '.product-description'),
+        ('CSS_SELECTOR', '.item-model-number'),
+        ('CSS_SELECTOR', '#importantInformation'),
+        ('CSS_SELECTOR', '#productOverview_feature_div'),
+
+        # 使用 XPath 查找可能包含描述的区域
+        ('XPATH', "//div[contains(@id, 'description')]"),
+        ('XPATH', "//div[contains(@id, 'Description')]"),
+        ('XPATH', "//div[contains(@class, 'description')]"),
+        ('XPATH', "//div[contains(@id, 'product-description')]"),
+        ('XPATH', "//div[contains(@id, 'product_description')]"),
+        ('XPATH', "//div[@id='feature-bullets']//li"),
+        ('XPATH', "//div[contains(@class, 'product-description')]"),
+        ('XPATH', "//div[contains(@id, 'productDescription')]//p"),
+        ('XPATH', "//div[@id='detailBulletsWrapper_feature_div']//span[@class='a-list-item']"),
+        ('XPATH', "//div[contains(@id, 'detail')]//table//tr"),
+        ('XPATH', "//div[contains(@id, 'product')]//table//tr")
     ]
 
     PRODUCT_LINK_SELECTORS = [
