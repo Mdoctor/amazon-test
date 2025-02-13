@@ -2,9 +2,6 @@ class ScraperConfig:
     HEADLESS = False
     MAX_PRODUCTS_PER_CATEGORY = 10  # 每个类别爬取的商品数量
     MAX_WORKERS = 4  # 最大并行进程数
-    MAX_RETRIES_PER_URL = 3  # 每个URL的最大重试次数
-    PROCESS_TIMEOUT = 300  # 单个进程的超时时间（秒）
-    MIN_PROCESS_INTERVAL = 1  # 进程启动的最小间隔时间（秒）
     CHUNK_SIZE = 10  # 每个进程处理的产品数量
     WAIT_TIME = 15
     MIN_SLEEP = 3
