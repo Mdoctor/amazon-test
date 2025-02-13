@@ -505,8 +505,48 @@ class AmazonScraper:
     def _get_product_availability(self):
         """获取商品可用性状态"""
         try:
-            # 使用JavaScript获取库存状态
-            availability = self.driver.execute_script("""
+            # 1. 首先检查"Add to Cart"按钮
+            add_to_cart_script = """
+                let addToCartBtn = document.querySelector('#add-to-cart-button');
+                if (addToCartBtn && addToCartBtn.disabled !== true) {
+                    return 'In Stock';
+                }
+
+                // 检查"Buy Now"按钮
+                let buyNowBtn = document.querySelector('#buy-now-button');
+                if (buyNowBtn && buyNowBtn.disabled !== true) {
+                    return 'In Stock';
+                }
+
+                // 检查价格显示
+                let priceElement = document.querySelector('.a-price') || 
+                                 document.querySelector('#priceblock_ourprice') ||
+                                 document.querySelector('#price');
+                if (priceElement) {
+                    return 'In Stock';
+                }
+
+                // 检查缺货信息
+                let outOfStock = document.querySelector('#outOfStock, .out-of-stock');
+                if (outOfStock) {
+                    return 'Currently unavailable';
+                }
+
+                // 检查预订信息
+                let preorderElement = document.querySelector('#preOrderButton');
+                if (preorderElement) {
+                    return 'Available for Pre-order';
+                }
+
+                return null;
+            """
+
+            availability = self.driver.execute_script(add_to_cart_script)
+            if availability:
+                return availability
+
+            # 2. 检查传统的可用性指示器
+            availability_script = """
                 var availabilityElement = document.querySelector('#availability span');
                 if (availabilityElement) {
                     return availabilityElement.textContent.trim();
@@ -520,18 +560,26 @@ class AmazonScraper:
                     return buyboxElement.textContent.trim();
                 }
                 return null;
-            """)
+            """
 
+            availability = self.driver.execute_script(availability_script)
             if availability:
                 return availability.strip()
 
-            # 备选方法：尝试其他选择器
+            # 3. 检查价格信息来推断可用性
+            price = self._get_product_price()
+            if price and price != 'N/A':
+                return 'In Stock'  # 如果有价格，很可能是在售的
+
+            # 4. 检查其他可能的状态指示器
             selectors = [
                 ('CSS_SELECTOR', '#availability span'),
                 ('CSS_SELECTOR', '#merchantInfoFeature'),
                 ('CSS_SELECTOR', '#buybox-see-all-buying-choices'),
                 ('XPATH', '//div[@id="availability"]//span[@class="a-size-medium a-color-success"]'),
-                ('CSS_SELECTOR', '#outOfStock .a-color-price')
+                ('CSS_SELECTOR', '#outOfStock .a-color-price'),
+                ('CSS_SELECTOR', '.a-color-price'),  # 通用价格选择器
+                ('CSS_SELECTOR', '.a-button-input'),  # 通用按钮选择器
             ]
 
             for by_method, selector in selectors:
@@ -539,17 +587,32 @@ class AmazonScraper:
                 if element:
                     text = element.text.strip()
                     if text:
+                        # 如果找到任何相关文本，返回它
                         return text
 
-            # 检查是否缺货
-            out_of_stock = self.safe_find_element(By.CSS_SELECTOR, '#outOfStock')
-            if out_of_stock:
-                return "Currently unavailable"
+            # 5. 基于页面整体状态进行推断
+            try:
+                # 检查页面是否包含添加到购物车的选项
+                add_to_cart_elements = self.driver.find_elements(By.CSS_SELECTOR,
+                                                                 '[id*="add-to-cart"], [id*="addToCart"], [id*="buy-now"]')
+                if add_to_cart_elements:
+                    return 'In Stock'
+
+                # 检查是否有价格选择选项
+                price_options = self.driver.find_elements(By.CSS_SELECTOR,
+                                                          '.a-price, #price, #priceblock_ourprice, .price-info')
+                if price_options:
+                    return 'In Stock'
+
+            except Exception:
+                pass
+
+            # 6. 如果所有方法都失败，返回一个默认状态
+            return 'Status Unknown'
 
         except Exception as e:
             logger.warning(f"Error getting availability: {str(e)}")
-
-        return 'N/A'
+            return 'Status Unknown'
 
     def _extract_asin(self, url):
         """从URL中提取ASIN"""

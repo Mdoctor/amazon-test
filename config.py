@@ -4,8 +4,8 @@ class ScraperConfig:
     MAX_WORKERS = 4  # 最大并行进程数
     CHUNK_SIZE = 10  # 每个进程处理的产品数量
     WAIT_TIME = 15
-    MIN_SLEEP = 3
-    MAX_SLEEP = 7
+    MIN_SLEEP = 1
+    MAX_SLEEP = 3
     SCROLL_STEPS = 3
     WINDOW_SIZE = (1920, 1080)
 
