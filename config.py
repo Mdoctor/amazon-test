@@ -1,7 +1,10 @@
 class ScraperConfig:
-    HEADLESS = True
+    HEADLESS = False
     MAX_PRODUCTS_PER_CATEGORY = 10  # 每个类别爬取的商品数量
-    MAX_WORKERS = 4  # 默认并行进程数
+    MAX_WORKERS = 4  # 最大并行进程数
+    MAX_RETRIES_PER_URL = 3  # 每个URL的最大重试次数
+    PROCESS_TIMEOUT = 300  # 单个进程的超时时间（秒）
+    MIN_PROCESS_INTERVAL = 1  # 进程启动的最小间隔时间（秒）
     CHUNK_SIZE = 10  # 每个进程处理的产品数量
     WAIT_TIME = 15
     MIN_SLEEP = 3
@@ -26,6 +29,7 @@ class ScraperConfig:
         ('CSS_SELECTOR', '.a-price .a-price-whole'),
         ('CSS_SELECTOR', '.a-price .a-price-fraction'),
         ('CSS_SELECTOR', '.a-price'),
+        ('CSS_SELECTOR', '.a-price-whole'),
         ('XPATH', "//span[contains(@class,'a-price')]"),
         ('XPATH', "//span[contains(@class,'a-price-whole')]"),
         ('XPATH', "//span[contains(@class,'a-price-fraction')]"),
@@ -121,4 +125,17 @@ class ScraperConfig:
         "//span[@class='category']",
         "//title",
         "//div[contains(@class, 'category-title')]"
+    ]
+
+    SEARCH_RESULT_RANK_SELECTORS = [
+        '.zg-badge-text',
+        '[class*="zg-badge"]',
+        '.zg-rank',
+        '.a-row.a-size-base span:first-child'
+    ]
+
+    SPONSORED_MARKERS = [
+        '[data-component-type="sp-sponsored-result"]',
+        '.s-sponsored-label-info-icon',
+        '.puis-sponsored-label-text'
     ]

@@ -634,11 +634,249 @@ class AmazonScraper:
 
         return ranked_products
 
-    def run(self, category_url=None):
+    def _validate_product_order(self, products):
+        """验证产品顺序的正确性"""
+        if not products:
+            return False
+
+        # 检查排名是否连续
+        ranks = [p.get('rank') for p in products]
+        expected_ranks = list(range(1, len(ranks) + 1))
+
+        if ranks != expected_ranks:
+            logger.warning(f"Product ranks are not sequential: {ranks}")
+            return False
+
+        return True
+
+    def get_search_results(self, search_url, max_retries=5):
+        """获取搜索结果中的商品链接"""
+        retry_count = 0
+        while retry_count < max_retries:
+            try:
+                if not self._handle_page_with_retry(search_url):
+                    retry_count += 1
+                    logger.warning(f"Failed to load page, attempt {retry_count}/{max_retries}")
+                    continue
+
+                # 执行页面滚动来加载更多内容，确保加载足够多的结果
+                self._scroll_until_enough_results()
+
+                # 等待搜索结果加载
+                try:
+                    self.wait.until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, '.s-result-item'))
+                    )
+                except TimeoutException:
+                    logger.warning(f"Timeout waiting for search results, attempt {retry_count + 1}/{max_retries}")
+                    if retry_count < max_retries - 1:
+                        logger.info("Refreshing page...")
+                        self.driver.refresh()
+                        self.random_sleep(3, 5)
+                        retry_count += 1
+                        continue
+
+                # 使用更精确的JavaScript脚本来获取排序后的产品链接
+                script = """
+                    function getProducts() {
+                        let products = [];
+                        // 获取所有搜索结果项
+                        let resultItems = Array.from(document.querySelectorAll('[data-component-type="s-search-result"]'));
+
+                        // 对结果项进行处理
+                        resultItems.forEach((item, index) => {
+                            // 获取排名信息（如果有的话）
+                            let rankElem = item.querySelector('.zg-badge-text') || 
+                                         item.querySelector('[class*="zg-badge"]') ||
+                                         item.querySelector('.zg-rank');
+                            let rank = rankElem ? parseInt(rankElem.textContent.match(/\\d+/)[0]) : (index + 1);
+
+                            // 获取产品链接
+                            let link = item.querySelector('a[href*="/dp/"]');
+                            if (link) {
+                                let url = link.href;
+                                let asinMatch = url.match(/\/dp\/([A-Z0-9]{10})/);
+                                if (asinMatch) {
+                                    // 检查是否为赞助商品
+                                    let isSponsored = item.querySelector('[data-component-type="sp-sponsored-result"]') !== null;
+                                    if (!isSponsored) {
+                                        products.push({
+                                            rank: rank,
+                                            url: 'https://www.amazon.com/dp/' + asinMatch[1],
+                                            asin: asinMatch[1]
+                                        });
+                                    }
+                                }
+                            }
+                        });
+
+                        // 按排名排序
+                        products.sort((a, b) => a.rank - b.rank);
+
+                        // 只返回指定数量的产品
+                        return products.slice(0, arguments[0]);
+                    }
+                    return getProducts(arguments[0]);
+                """
+
+                product_links = self.driver.execute_script(script, ScraperConfig.MAX_PRODUCTS_PER_CATEGORY)
+
+                if not product_links:
+                    logger.warning(
+                        f"No product links found with primary method (attempt {retry_count + 1}/{max_retries})")
+                    if retry_count < max_retries - 1:
+                        logger.info("Trying fallback method...")
+                        fallback_links = self._get_search_results_fallback()
+                        if fallback_links:
+                            product_links = fallback_links[:ScraperConfig.MAX_PRODUCTS_PER_CATEGORY]
+                        else:
+                            self.driver.refresh()
+                            self.random_sleep(3, 5)
+                            retry_count += 1
+                            continue
+
+                # 确保没有重复的ASIN
+                unique_links = []
+                seen_asins = set()
+                for product in product_links:
+                    if product['asin'] not in seen_asins:
+                        seen_asins.add(product['asin'])
+                        unique_links.append(product['url'])
+                        if len(unique_links) >= ScraperConfig.MAX_PRODUCTS_PER_CATEGORY:
+                            break
+
+                if unique_links:
+                    logger.info(f"Found {len(unique_links)} unique products from search results")
+                    for i, link in enumerate(unique_links, 1):
+                        logger.info(f"Product {i}: {link}")
+                    return unique_links[:ScraperConfig.MAX_PRODUCTS_PER_CATEGORY]
+
+                logger.warning(f"No products found after attempt {retry_count + 1}/{max_retries}")
+                retry_count += 1
+
+            except Exception as e:
+                logger.error(f"Error getting search results (attempt {retry_count + 1}/{max_retries}): {str(e)}")
+                retry_count += 1
+                if retry_count < max_retries:
+                    self.random_sleep(3, 5)
+
+        logger.error(f"Failed to get search results after {max_retries} attempts")
+        return []
+
+    def _scroll_until_enough_results(self):
+        """滚动页面直到获取足够数量的结果"""
+        max_scroll_attempts = 10
+        scroll_attempt = 0
+        previous_height = 0
+
+        while scroll_attempt < max_scroll_attempts:
+            # 获取当前有效的搜索结果数量
+            valid_results = len(self.driver.find_elements(By.CSS_SELECTOR,
+                                                          '[data-component-type="s-search-result"]:not([data-component-type="sp-sponsored-result"])'))
+
+            if valid_results >= ScraperConfig.MAX_PRODUCTS_PER_CATEGORY:
+                logger.info(f"Found enough results: {valid_results}")
+                break
+
+            # 滚动到页面底部
+            self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            self.random_sleep(1, 2)
+
+            # 检查是否已经到达底部
+            current_height = self.driver.execute_script("return document.body.scrollHeight")
+            if current_height == previous_height:
+                logger.info("Reached bottom of page")
+                break
+
+            previous_height = current_height
+            scroll_attempt += 1
+
+            # 等待新内容加载
+            self.random_sleep(1, 2)
+
+    def _get_search_results_fallback(self):
+        """备用方法：使用多种选择器组合获取搜索结果"""
+        products = []
+        try:
+            # 多层选择器组合
+            selector_combinations = [
+                # 组合1：标准搜索结果
+                {'container': '[data-component-type="s-search-result"]', 'link': 'a[href*="/dp/"]'},
+                # 组合2：结果项
+                {'container': '.s-result-item[data-asin]', 'link': 'a.a-link-normal[href*="/dp/"]'},
+                # 组合3：网格布局
+                {'container': '.sg-col-inner', 'link': 'a.a-text-normal[href*="/dp/"]'},
+                # 组合4：备用布局
+                {'container': '.s-include-content-margin', 'link': 'a.a-link-normal[href*="/dp/"]'}
+            ]
+
+            for selectors in selector_combinations:
+                try:
+                    # 等待容器元素出现
+                    containers = WebDriverWait(self.driver, 10).until(
+                        EC.presence_of_all_elements_located((By.CSS_SELECTOR, selectors['container']))
+                    )
+
+                    for container in containers:
+                        if len(products) >= ScraperConfig.MAX_PRODUCTS_PER_CATEGORY:
+                            break
+
+                        try:
+                            link = container.find_element(By.CSS_SELECTOR, selectors['link'])
+                            url = link.get_attribute('href')
+                            if url:
+                                match = re.search(r'/dp/([A-Z0-9]{10})', url)
+                                if match:
+                                    asin = match.group(1)
+                                    if not any(asin in p['url'] for p in products):
+                                        products.append({
+                                            'url': f'https://www.amazon.com/dp/{asin}'
+                                        })
+                        except:
+                            continue
+
+                    if products:
+                        break
+
+                except TimeoutException:
+                    continue
+
+            # 如果还是没有找到产品，尝试直接查找所有包含 dp 的链接
+            if not products:
+                all_links = self.driver.find_elements(By.CSS_SELECTOR, 'a[href*="/dp/"]')
+                seen_asins = set()
+
+                for link in all_links:
+                    if len(products) >= ScraperConfig.MAX_PRODUCTS_PER_CATEGORY:
+                        break
+
+                    try:
+                        url = link.get_attribute('href')
+                        if url:
+                            match = re.search(r'/dp/([A-Z0-9]{10})', url)
+                            if match and match.group(1) not in seen_asins:
+                                seen_asins.add(match.group(1))
+                                products.append({
+                                    'url': f'https://www.amazon.com/dp/{match.group(1)}'
+                                })
+                    except:
+                        continue
+
+        except Exception as e:
+            logger.error(f"Error in fallback search results method: {str(e)}")
+
+        return products
+
+    def run(self, search_url=None):
         """运行爬虫"""
         try:
             self.products = []
-            product_links = self.get_bestsellers(category_url)
+            # 获取搜索结果中的商品链接
+            product_links = self.get_search_results(search_url)
+
+            # 提取搜索关键词作为类别名称
+            search_term = re.search(r'k=([^&]+)', search_url)
+            self.category_name = unquote(search_term.group(1)).replace('+', ' ') if search_term else "Search_Results"
 
             for i, link in enumerate(product_links, 1):
                 logger.info(f"Scraping product {i}/{len(product_links)}: {link}")
