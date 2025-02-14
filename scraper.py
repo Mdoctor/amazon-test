@@ -155,70 +155,178 @@ class AmazonScraper:
         title_elem = self.find_element_with_retry(ScraperConfig.TITLE_SELECTORS)
         return self.get_text_safely(title_elem)
 
-    def _get_product_price(self):
-        """获取商品价格"""
+    def _clean_price_text(self, price_text):
+        """清理价格文本"""
         try:
-            # 方案1: 检查第一种价格类型 (带有 apexPriceToPay 的表格形式)
-            price_script = """
-                let apexPrice = document.querySelector('.apexPriceToPay .a-offscreen');
-                if (apexPrice) {
-                    return apexPrice.textContent.trim();
-                }
-                return null;
-            """
-            apex_price = self.driver.execute_script(price_script)
-            if apex_price:
-                price_match = re.search(r'\$?([\d,]+\.?\d*)', apex_price)
-                if price_match:
-                    return float(price_match.group(1).replace(',', ''))
+            if not price_text:
+                return 'N/A'
 
-            # 方案2: 检查第二种和第三种价格类型 (带有 priceToPay 类的 div)
-            price_script = """
-                let priceToPayElement = document.querySelector('.priceToPay .a-offscreen');
-                if (priceToPayElement) {
-                    return priceToPayElement.textContent.trim();
-                }
+            # 移除所有空白字符
+            price_text = ''.join(price_text.split())
 
-                // 如果没有 offscreen 价格，尝试组合价格部分
-                let priceWhole = document.querySelector('.priceToPay .a-price-whole');
-                let priceFraction = document.querySelector('.priceToPay .a-price-fraction');
-                if (priceWhole && priceFraction) {
-                    return priceWhole.textContent.trim() + '.' + priceFraction.textContent.trim();
-                }
-                return null;
-            """
-            price_to_pay = self.driver.execute_script(price_script)
-            if price_to_pay:
-                # 清理价格文本
-                price_match = re.search(r'\$?([\d,]+\.?\d*)', price_to_pay.replace('\n', ''))
-                if price_match:
-                    return float(price_match.group(1).replace(',', ''))
+            # 确保有数字
+            if not re.search(r'\d', price_text):
+                return 'N/A'
 
-            # 备选方案：尝试其他常见的价格选择器
-            # 3.1. 首先尝试获取 a-offscreen 中的完整价格
-            price_elem = self.safe_find_element(By.CSS_SELECTOR, ".a-price .a-offscreen")
-            if price_elem:
-                price_text = price_elem.get_attribute('textContent')
-                if price_text:
-                    price = re.search(r'\$([\d,.]+)', price_text)
-                    if price:
-                        return float(price.group(1).replace(',', ''))
-
-            # 3.2. 如果上面方法失败,尝试组合价格部分
-            whole = self.safe_find_element(By.CSS_SELECTOR, ".a-price-whole")
-            fraction = self.safe_find_element(By.CSS_SELECTOR, ".a-price-fraction")
-            if whole and fraction:
-                price_text = f"{whole.text}.{fraction.text}"
-                try:
-                    return float(price_text)
-                except:
-                    pass
+            # 提取价格数字（包括小数点）
+            price_match = re.search(r'(\d+\.?\d*)', price_text)
+            if price_match:
+                price = float(price_match.group(1))
+                return "{:.2f}".format(price)
 
             return 'N/A'
+        except:
+            return 'N/A'
+
+    def _get_product_price(self):
+        """获取商品所有价格相关信息"""
+        try:
+            price_info = {
+                'current_price': 'N/A',
+                'original_price': 'N/A',
+                'deal_price': 'N/A',
+                'price_range': {
+                    'min': 'N/A',
+                    'max': 'N/A'
+                },
+                'savings': {
+                    'amount': 'N/A',
+                    'percentage': 'N/A'
+                },
+                'prime_price': 'N/A',
+                'installment': 'N/A',
+                'coupon': 'N/A'
+            }
+
+            # 1. 获取当前价格 - 更新选择器和提取逻辑
+            current_price_script = """
+                function getCurrentPrice() {
+                    // 尝试所有可能的价格选择器
+                    const priceSelectors = [
+                        '.a-price .a-offscreen',
+                        '.apexPriceToPay .a-offscreen',
+                        '.a-price[data-a-size="l"] .a-offscreen',
+                        '#priceblock_ourprice',
+                        '#priceblock_dealprice',
+                        '.a-price:not([data-a-strike="true"]) .a-offscreen',
+                        '.reinventPriceAccordionT2 .a-price .a-offscreen'
+                    ];
+
+                    for (let selector of priceSelectors) {
+                        const element = document.querySelector(selector);
+                        if (element) {
+                            return element.textContent.trim();
+                        }
+                    }
+
+                    // 尝试获取价格整数和小数部分
+                    const wholePrice = document.querySelector('.a-price-whole');
+                    const fractionPrice = document.querySelector('.a-price-fraction');
+                    if (wholePrice && fractionPrice) {
+                        return `$${wholePrice.textContent.trim()}${fractionPrice.textContent.trim()}`;
+                    }
+
+                    return null;
+                }
+                return getCurrentPrice();
+            """
+
+            current_price = self.driver.execute_script(current_price_script)
+            if current_price:
+                price_info['current_price'] = self._clean_price_text(current_price)
+
+            # 2. 获取原价/划线价 - 更新选择器
+            original_price_script = """
+                function getOriginalPrice() {
+                    const originalPriceSelectors = [
+                        '.a-text-price[data-a-strike="true"] .a-offscreen',
+                        '.a-text-price .a-offscreen',
+                        '#priceblock_listprice',
+                        '.a-price[data-a-strike="true"] .a-offscreen',
+                        '.a-text-strike'
+                    ];
+
+                    for (let selector of originalPriceSelectors) {
+                        const element = document.querySelector(selector);
+                        if (element) {
+                            return element.textContent.trim();
+                        }
+                    }
+                    return null;
+                }
+                return getOriginalPrice();
+            """
+
+            original_price = self.driver.execute_script(original_price_script)
+            if original_price:
+                price_info['original_price'] = self._clean_price_text(original_price)
+
+            # 3. 获取折扣信息
+            savings_script = """
+                function getSavings() {
+                    const savingsSelectors = {
+                        amount: ['.savingsPercentage', '.priceBlockSavingsString'],
+                        percentage: ['.savingsPercentage']
+                    };
+
+                    let savings = {amount: null, percentage: null};
+
+                    // 检查金额节省
+                    for (let selector of savingsSelectors.amount) {
+                        const element = document.querySelector(selector);
+                        if (element) {
+                            savings.amount = element.textContent.trim();
+                            break;
+                        }
+                    }
+
+                    // 检查百分比节省
+                    for (let selector of savingsSelectors.percentage) {
+                        const element = document.querySelector(selector);
+                        if (element) {
+                            savings.percentage = element.textContent.trim();
+                            break;
+                        }
+                    }
+
+                    return savings;
+                }
+                return getSavings();
+            """
+
+            savings = self.driver.execute_script(savings_script)
+            if savings:
+                if savings['amount']:
+                    price_info['savings']['amount'] = self._clean_price_text(savings['amount'])
+                if savings['percentage']:
+                    percentage = re.search(r'(\d+(?:\.\d+)?)', savings['percentage'])
+                    if percentage:
+                        price_info['savings']['percentage'] = percentage.group(1)
+
+            # 如果没有找到当前价格，尝试从页面源代码中提取
+            if price_info['current_price'] == 'N/A':
+                try:
+                    page_source = self.driver.page_source
+                    price_matches = re.findall(r'\"price\":\s*\"?\$?(\d+\.?\d*)\"?', page_source)
+                    if price_matches:
+                        price_info['current_price'] = self._clean_price_text(price_matches[0])
+                except Exception as e:
+                    logger.error(f"Error extracting price from page source: {str(e)}")
+
+            return price_info
 
         except Exception as e:
-            logger.error(f"Error extracting price: {str(e)}")
-            return 'N/A'
+            logger.error(f"Error extracting price information: {str(e)}")
+            return {
+                'current_price': 'N/A',
+                'original_price': 'N/A',
+                'deal_price': 'N/A',
+                'price_range': {'min': 'N/A', 'max': 'N/A'},
+                'savings': {'amount': 'N/A', 'percentage': 'N/A'},
+                'prime_price': 'N/A',
+                'installment': 'N/A',
+                'coupon': 'N/A'
+            }
 
     def _get_product_rating(self):
         try:

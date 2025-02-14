@@ -18,21 +18,51 @@ class ScraperConfig:
     ]
 
     PRICE_SELECTORS = [
+        # 当前价格
+        ('CSS_SELECTOR', '.apexPriceToPay .a-offscreen'),
         ('CSS_SELECTOR', '.a-price .a-offscreen'),
-        ('CSS_SELECTOR', '.a-color-price'),
         ('CSS_SELECTOR', '#priceblock_ourprice'),
         ('CSS_SELECTOR', '#priceblock_dealprice'),
-        ('CSS_SELECTOR', '.apexPriceToPay .a-offscreen'),
-        ('CSS_SELECTOR', '.a-price .a-price-whole'),
-        ('CSS_SELECTOR', '.a-price .a-price-fraction'),
-        ('CSS_SELECTOR', '.a-price'),
-        ('CSS_SELECTOR', '.a-price-whole'),
-        ('XPATH', "//span[contains(@class,'a-price')]"),
-        ('XPATH', "//span[contains(@class,'a-price-whole')]"),
-        ('XPATH', "//span[contains(@class,'a-price-fraction')]"),
-        ('CSS_SELECTOR', '#corePrice_feature_div .a-price'),
-        ('ID', 'priceblock_ourprice'),
-        ('ID', 'priceblock_dealprice'),
+
+        # 划线价格/原价
+        ('CSS_SELECTOR', '.a-text-price .a-offscreen'),
+        ('CSS_SELECTOR', '#priceblock_listprice'),
+        ('CSS_SELECTOR', '.a-price.a-text-price[data-a-strike="true"] .a-offscreen'),
+        ('CSS_SELECTOR', '.a-text-strike'),
+
+        # 促销价格
+        ('CSS_SELECTOR', '#priceblock_saleprice'),
+        ('CSS_SELECTOR', '.savingsPercentage'),
+        ('CSS_SELECTOR', '#dealprice_savings'),
+        ('CSS_SELECTOR', '.priceBlockSavingsString'),
+
+        # 价格范围
+        ('CSS_SELECTOR', '#priceblock_ourprice_lbl'),
+        ('CSS_SELECTOR', '.a-price-range'),
+        ('CSS_SELECTOR', '.a-price-range .a-price:first-child .a-offscreen'),  # 最低价
+        ('CSS_SELECTOR', '.a-price-range .a-price:last-child .a-offscreen'),  # 最高价
+
+        # 优惠信息
+        ('CSS_SELECTOR', '#regularprice_savings'),
+        ('CSS_SELECTOR', '#dealprice_savings'),
+        ('CSS_SELECTOR', '.priceBlockSavingsString'),
+        ('CSS_SELECTOR', '#couponBadgeRegularVpc'),
+
+        # 分期付款信息
+        ('CSS_SELECTOR', '#installmentCalculator'),
+        ('CSS_SELECTOR', '.best-offer-name'),
+
+        # Prime会员价格
+        ('CSS_SELECTOR', '#prime_price_block'),
+        ('CSS_SELECTOR', '.primePriceLabel'),
+
+        # 其他可能的价格选择器
+        ('XPATH', "//span[contains(@class,'a-price')]//span[@class='a-offscreen']"),
+        ('XPATH', "//div[@id='corePrice_desktop']//span[contains(@class,'a-price')]"),
+        ('XPATH', "//div[contains(@class,'price')]//span[contains(@class,'a-offscreen')]"),
+        ('XPATH', "//tr[contains(.,'List Price')]//span[@class='a-price']//span[@class='a-offscreen']"),
+        ('XPATH', "//tr[contains(.,'Deal Price')]//span[@class='a-price']//span[@class='a-offscreen']"),
+        ('XPATH', "//div[@id='corePriceDisplay_desktop_feature_div']//span[contains(@class,'a-price')]")
     ]
 
     RATING_SELECTORS = [
