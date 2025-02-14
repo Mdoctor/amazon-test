@@ -77,6 +77,19 @@ class DriverManager:
         # 设置页面加载策略
         options.page_load_strategy = 'normal'
 
+        # 添加语言设置，确保使用英语
+        options.add_argument('--lang=en-US')
+        options.add_argument('--accept-lang=en-US,en;q=0.9')
+
+        # 添加地区设置
+        options.add_argument('--accept-language=en-US,en;q=0.9')
+
+        # 设置请求头中的语言偏好
+        options.add_experimental_option('prefs', {
+            'intl.accept_languages': 'en-US,en',
+            'profile.default_content_setting_values.cookies': 1
+        })
+
         try:
             # 随机User-Agent
             ua = UserAgent()

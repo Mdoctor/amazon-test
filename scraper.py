@@ -260,50 +260,65 @@ class AmazonScraper:
         """获取商品完整描述信息"""
         try:
             description_parts = []
-            seen_content = set()
+            seen_content = set()  # 用于去重
 
-            # 1. 优先获取主要描述区域
-            main_selectors = [
-                ('ID', 'feature-bullets'),  # 重点描述
-                ('ID', 'productDescription'),  # 产品描述
-                ('ID', 'aplus_feature_div'),  # A+内容
-                ('ID', 'productDetails_feature_div')  # 产品详情
-            ]
+            # 1. 使用 JavaScript 获取描述内容
+            js_script = """
+                function getDescription() {
+                    let descriptions = [];
 
-            for by_method, selector in main_selectors:
-                element = self.safe_find_element(getattr(By, by_method), selector)
-                if element:
-                    content = element.get_attribute('textContent')
-                    if content:
-                        cleaned = self._clean_description_text(content)
-                        if cleaned and cleaned not in seen_content:
-                            description_parts.append(cleaned)
-                            seen_content.add(cleaned)
-
-            # 2. 如果主要区域没有内容，尝试其他选择器
-            if not description_parts:
-                js_script = """
-                    return {
-                        bullets: document.getElementById('feature-bullets')?.textContent || '',
-                        description: document.getElementById('productDescription')?.textContent || '',
-                        details: document.getElementById('productDetails_feature_div')?.textContent || ''
+                    // 获取产品描述
+                    let productDesc = document.getElementById('productDescription');
+                    if (productDesc) {
+                        // 只获取文本内容，忽略脚本和样式
+                        let content = productDesc.innerText || productDesc.textContent;
+                        descriptions.push({type: 'Product Description', content: content});
                     }
-                """
 
-                js_results = self.driver.execute_script(js_script)
-                for key, content in js_results.items():
-                    if content:
-                        cleaned = self._clean_description_text(content)
-                        if cleaned and cleaned not in seen_content:
-                            description_parts.append(cleaned)
-                            seen_content.add(cleaned)
+                    // 获取要点描述
+                    let bullets = document.getElementById('feature-bullets');
+                    if (bullets) {
+                        let content = bullets.innerText || bullets.textContent;
+                        descriptions.push({type: 'Key Features', content: content});
+                    }
+
+                    // 获取技术细节
+                    let techDetails = document.getElementById('productDetails_techSpec_section_1');
+                    if (techDetails) {
+                        let content = techDetails.innerText || techDetails.textContent;
+                        descriptions.push({type: 'Technical Details', content: content});
+                    }
+
+                    // 获取产品详情
+                    let productDetails = document.getElementById('detailBullets_feature_div');
+                    if (productDetails) {
+                        let content = productDetails.innerText || productDetails.textContent;
+                        descriptions.push({type: 'Product Details', content: content});
+                    }
+
+                    return descriptions;
+                }
+                return getDescription();
+            """
+
+            js_results = self.driver.execute_script(js_script)
+
+            # 2. 处理和清理描述内容
+            if js_results:
+                for result in js_results:
+                    if result['content'] and result['content'].strip():
+                        content = self._clean_description_text(result['content'])
+                        # 额外的过滤步骤
+                        content = self._filter_code_content(content)
+                        if content and content not in seen_content:
+                            description_parts.append(f"{result['type']}:\n{content}")
+                            seen_content.add(content)
 
             # 3. 组合并格式化描述内容
             if description_parts:
                 final_description = "\n\n".join(description_parts)
-                # 限制长度但保持完整段落
-                if len(final_description) > 5000:  # 减小最大长度限制
-                    final_description = self._truncate_to_last_complete_section(final_description, 5000)
+                if len(final_description) > 32000:
+                    final_description = self._truncate_to_last_complete_section(final_description, 32000)
                 return final_description
 
             return 'N/A'
@@ -312,22 +327,67 @@ class AmazonScraper:
             logger.error(f"Error getting product description: {str(e)}")
             return 'N/A'
 
+    def _filter_code_content(self, text):
+        """过滤掉代码内容"""
+        if not text:
+            return None
+
+        try:
+            # 移除常见的代码标记
+            code_patterns = [
+                r'<script[\s\S]*?</script>',  # 移除JavaScript代码
+                r'<style[\s\S]*?</style>',  # 移除CSS代码
+                r'function\s*\w*\s*\{[\s\S]*?\}',  # 移除函数定义
+                r'var\s+\w+\s*=',  # 移除变量声明
+                r'\.[\w-]+\s*\{[^}]*\}',  # 移除CSS规则
+                r'/\*[\s\S]*?\*/',  # 移除多行注释
+                r'//.*',  # 移除单行注释
+                r'console\.log\(.*?\)',  # 移除console.log语句
+                r'document\..*?;',  # 移除document操作
+                r'window\..*?;',  # 移除window操作
+                r'\$\(.*?\)',  # 移除jQuery选择器
+            ]
+
+            # 应用所有过滤模式
+            for pattern in code_patterns:
+                text = re.sub(pattern, '', text, flags=re.IGNORECASE | re.MULTILINE)
+
+            # 移除空行和多余的空白
+            lines = [line.strip() for line in text.split('\n') if line.strip()]
+            text = '\n'.join(lines)
+
+            # 如果文本看起来仍然像代码，返回None
+            code_indicators = [
+                'function(', 'return', 'var ', 'let ', 'const ', '=>',
+                '{', '}', ';', 'if(', 'for(', 'while('
+            ]
+            if any(indicator in text for indicator in code_indicators):
+                return None
+
+            return text.strip() if text else None
+
+        except Exception as e:
+            logger.warning(f"Error filtering code content: {str(e)}")
+            return text.strip() if text else None
+
     def _clean_description_text(self, text):
         """清理和格式化描述文本"""
         if not text:
             return None
 
         try:
-            # 移除HTML标签
-            text = re.sub(r'<[^>]+>', '', text)
-
-            # 移除JavaScript代码
-            text = re.sub(r'function\s*\(.*?\)\s*{.*?}', '', text, flags=re.DOTALL)
-
             # 基本清理
             text = text.strip()
             # 替换多个空白字符为单个空格
             text = re.sub(r'\s+', ' ', text)
+            # 替换多个换行为双换行
+            text = re.sub(r'\n\s*\n\s*\n*', '\n\n', text)
+            # 移除特殊字符但保留基本标点
+            text = re.sub(r'[^\w\s.,;:!?()\'"\-–—/\n]', '', text)
+            # 移除重复的标点符号
+            text = re.sub(r'([.,!?])\1+', r'\1', text)
+            # 确保段落之间有适当的间距
+            text = re.sub(r'([.!?])\s*(\w)', r'\1\n\2', text)
 
             # 移除常见的无用文本
             useless_patterns = [
@@ -337,28 +397,17 @@ class AmazonScraper:
                 r'Click to open expanded view',
                 r'Scroll left/right to see more',
                 r'Roll over image to zoom in',
-                r'JavaScript is disabled',
-                r'Report incorrect product information',
-                r'{.*?}',  # 移除JSON格式的内容
-                r'function\(.*?\)',  # 移除函数声明
-                r'return .*?;'  # 移除return语句
             ]
-
             for pattern in useless_patterns:
                 text = re.sub(pattern, '', text, flags=re.IGNORECASE)
 
-            # 移除过长的空格和换行
-            text = re.sub(r'\n\s*\n\s*\n*', '\n\n', text)
-
-            # 限制长度
-            if len(text) > 5000:
-                text = text[:5000] + "..."
-
-            return text.strip() if text else None
+            # 最终清理
+            text = text.strip()
+            return text if text else None
 
         except Exception as e:
             logger.warning(f"Error cleaning description text: {str(e)}")
-            return None
+            return text.strip() if text else None
 
     def _get_content_type(self, element):
         """获取描述内容的类型"""
@@ -618,10 +667,42 @@ class AmazonScraper:
                 if retries > 0:
                     logger.info(f"Retry attempt {retries}/{max_retries}")
 
-                logger.info(f"Attempting to navigate to URL: {url}")
-                self.driver.get(url['url'] if isinstance(url, dict) else url)
-                logger.info("Successfully navigated to URL")
+                # 添加请求头设置
+                self.driver.execute_cdp_cmd('Network.setExtraHTTPHeaders', {
+                    'headers': {
+                        'Accept-Language': 'en-US,en;q=0.9',
+                        'Accept-Country': 'US'
+                    }
+                })
 
+                # 设置 Cookie 强制使用美国站点
+                self.driver.execute_script("""
+                    document.cookie = "i18n-prefs=USD; domain=.amazon.com; path=/";
+                    document.cookie = "lc-main=en_US; domain=.amazon.com; path=/";
+                """)
+
+                # 确保使用美国亚马逊域名
+                if isinstance(url, dict):
+                    url_str = url['url']
+                else:
+                    url_str = url
+
+                # 将任何亚马逊域名强制转换为美国站点
+                url_str = url_str.replace('amazon.cn', 'amazon.com')
+                url_str = url_str.replace('amazon.co.jp', 'amazon.com')
+                url_str = url_str.replace('amazon.co.uk', 'amazon.com')
+
+                logger.info(f"Attempting to navigate to URL: {url_str}")
+                self.driver.get(url_str)
+
+                # 检查并处理地区重定向
+                current_url = self.driver.current_url
+                if 'amazon.com' not in current_url or '/gp/switch-language' in current_url:
+                    logger.warning("Detected region/language redirect, attempting to force US site...")
+                    self.driver.get('https://www.amazon.com/?language=en_US')
+                    self.driver.get(url_str)
+
+                logger.info("Successfully navigated to URL")
                 self.random_sleep()
 
                 if self._check_and_handle_throttling():

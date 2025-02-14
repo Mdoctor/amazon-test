@@ -10,9 +10,9 @@ def main():
     try:
         # 搜索关键词列表
         search_terms = [
-            "shoes for men",
+            # "shoes for men",
             "apple",
-            # "laptop",
+            "laptop",
             # "headphones",
             # "gaming mouse"
         ]
@@ -22,7 +22,7 @@ def main():
 
         # 构建搜索URL，添加排序参数以获取最相关的结果
         search_urls = [
-            f"https://www.amazon.com/s?k={quote_plus(term)}&s=exact-aware-popularity-rank&ref=nb_sb_noss"
+            f"https://www.amazon.com/s?k={quote_plus(term)}&s=exact-aware-popularity-rank&language=en_US&currency=USD"
             for term in search_terms
         ]
 
