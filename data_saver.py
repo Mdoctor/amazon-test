@@ -7,6 +7,9 @@ from openpyxl.styles import Font, PatternFill, Alignment
 
 
 class DataSaver:
+    # 定义输出目录
+    OUTPUT_DIR = 'scraper_excel'
+
     @staticmethod
     def save_to_excel(products, category_name):
         """保存商品信息到Excel文件"""
@@ -15,10 +18,16 @@ class DataSaver:
                 logger.warning("No products to save")
                 return
 
+            # 创建输出目录（如果不存在）
+            os.makedirs(DataSaver.OUTPUT_DIR, exist_ok=True)
+
             # 准备数据
             safe_category_name = re.sub(r'[<>:"/\\|?*]', '_', category_name)
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             filename = f'{safe_category_name}_bestsellers_{timestamp}.xlsx'
+
+            # 构建完整的文件路径
+            full_path = os.path.join(DataSaver.OUTPUT_DIR, filename)
 
             # 创建DataFrame，包含所有字段
             df = pd.DataFrame([
@@ -49,34 +58,14 @@ class DataSaver:
                 for i, p in enumerate(products)
             ])
 
-            # 尝试保存文件
-            DataSaver._try_save_file(df, filename)
+            # 直接保存到指定路径
+            DataSaver._save_with_formatting(df, full_path)
+            logger.info(f"Successfully saved to {full_path}")
 
         except Exception as e:
             logger.error(f"Error saving to Excel: {str(e)}")
+            # 如果Excel保存失败，尝试CSV备份
             DataSaver._save_as_csv_backup(df, safe_category_name, timestamp)
-
-    @staticmethod
-    def _try_save_file(df, filename):
-        """尝试在不同位置保存文件"""
-        possible_dirs = [
-            '.',
-            os.path.expanduser('~'),
-            os.path.join(os.path.expanduser('~'), 'Documents'),
-            os.getenv('TEMP', os.path.expanduser('~'))
-        ]
-
-        for save_dir in possible_dirs:
-            try:
-                full_path = os.path.join(save_dir, filename)
-                DataSaver._save_with_formatting(df, full_path)
-                logger.info(f"Successfully saved to {full_path}")
-                return
-            except Exception as e:
-                logger.warning(f"Error saving to {save_dir}: {str(e)}")
-                continue
-
-        raise Exception("Unable to save file in any of the attempted locations")
 
     @staticmethod
     def _save_with_formatting(df, full_path):
@@ -103,18 +92,14 @@ class DataSaver:
                 for idx, col in enumerate(df_formatted.columns):
 
                     # 根据列类型设置宽度
-                    if col == 'Description':
-                        adjusted_width = 40  # 描述列固定宽度
-                    elif col in ['Title', 'Brand', 'Availability']:
-                        adjusted_width = 30  # 标题等列固定宽度
-                    elif col in ['URL', 'Image URL', 'Product URL']:
-                        adjusted_width = 35  # URL列固定宽度
+                    if col in ['Description', 'Title', 'URL', 'Image URL', 'Product URL']:
+                        adjusted_width = 40
                     elif any(price_text in col for price_text in ['Price', 'Savings']):
-                        adjusted_width = 15  # 价格列固定宽度
+                        adjusted_width = 20
                     elif col in ['Rank', 'Review Count']:
-                        adjusted_width = 10  # 数字列固定宽度
+                        adjusted_width = 20
                     else:
-                        adjusted_width = 20  # 其他列固定宽度
+                        adjusted_width = 15
 
                     # 设置列宽
                     column_letter = chr(65 + idx) if idx < 26 else chr(64 + idx // 26) + chr(65 + (idx % 26))
@@ -123,7 +108,7 @@ class DataSaver:
                 # 设置标题行格式
                 header_font = Font(bold=True)
                 header_fill = PatternFill(start_color="E0E0E0", end_color="E0E0E0", fill_type="solid")
-                header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=False)  # 禁用标题换行
+                header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=False)
 
                 for cell in worksheet[1]:
                     cell.font = header_font
@@ -131,8 +116,8 @@ class DataSaver:
                     cell.alignment = header_alignment
 
                 # 设置数据行格式
-                data_alignment = Alignment(vertical='center', wrap_text=False)  # 居中对齐，禁用自动换行
-                price_alignment = Alignment(horizontal='right', vertical='center', wrap_text=False)  # 价格右对齐
+                data_alignment = Alignment(vertical='center', wrap_text=False)
+                price_alignment = Alignment(horizontal='right', vertical='center', wrap_text=False)
 
                 for row in worksheet.iter_rows(min_row=2):
                     for cell in row:
@@ -171,9 +156,15 @@ class DataSaver:
     def _save_as_csv_backup(df, category_name, timestamp):
         """作为备份保存为CSV文件"""
         try:
+            # 确保输出目录存在
+            os.makedirs(DataSaver.OUTPUT_DIR, exist_ok=True)
+
+            # 构建CSV文件路径
             csv_filename = f'{category_name}_bestsellers_{timestamp}.csv'
-            csv_path = os.path.join(os.getenv('TEMP', '.'), csv_filename)
+            csv_path = os.path.join(DataSaver.OUTPUT_DIR, csv_filename)
+
+            # 保存CSV文件
             df.to_csv(csv_path, index=False, encoding='utf-8-sig')
-            logger.info(f"Saved data as CSV instead at: {csv_path}")
+            logger.info(f"Saved data as CSV backup at: {csv_path}")
         except Exception as csv_error:
             logger.error(f"Failed to save as CSV as well: {str(csv_error)}")
