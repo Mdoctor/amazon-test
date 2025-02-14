@@ -26,7 +26,7 @@ class AmazonScraper:
             last_height = self.driver.execute_script("return document.body.scrollHeight")
             for _ in range(ScraperConfig.SCROLL_STEPS):
                 self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-                self.random_sleep(1, 2)
+                self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
                 new_height = self.driver.execute_script("return document.body.scrollHeight")
                 if new_height == last_height:
                     break
@@ -66,7 +66,7 @@ class AmazonScraper:
                         return element
                 except:
                     continue
-            self.random_sleep(1, 2)
+            self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
         return None
 
     def find_elements_with_retry(self, selectors, max_retries=3):
@@ -79,7 +79,7 @@ class AmazonScraper:
                         return elements
                 except:
                     continue
-            self.random_sleep(1, 2)
+            self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
         return []
 
     def get_text_safely(self, element):
@@ -703,12 +703,12 @@ class AmazonScraper:
                     self.driver.get(url_str)
 
                 logger.info("Successfully navigated to URL")
-                self.random_sleep()
+                self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
 
                 if self._check_and_handle_throttling():
                     logger.info("Throttling detected, will retry...")
                     retries += 1
-                    self.random_sleep(3, 5)
+                    self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
                     continue
 
                 return True
@@ -717,7 +717,7 @@ class AmazonScraper:
                 logger.error(f"Error loading page (attempt {retries + 1}/{max_retries}): {str(e)}")
                 retries += 1
                 if retries < max_retries:
-                    self.random_sleep(3, 5)
+                    self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
 
         logger.error(f"Failed to load page after {max_retries} attempts: {url}")
         return False
@@ -750,7 +750,7 @@ class AmazonScraper:
 
             # 添加短暂滚动以触发动态内容加载
             self.driver.execute_script("window.scrollTo(0, 200)")
-            self.random_sleep(1, 2)
+            self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
 
             product_info = {
                 'url': url,
@@ -965,7 +965,7 @@ class AmazonScraper:
                     if retry_count < max_retries - 1:
                         logger.info("Refreshing page...")
                         self.driver.refresh()
-                        self.random_sleep(3, 5)
+                        self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
                         retry_count += 1
                         continue
 
@@ -1024,7 +1024,7 @@ class AmazonScraper:
                             product_links = fallback_links[:ScraperConfig.MAX_PRODUCTS_PER_CATEGORY]
                         else:
                             self.driver.refresh()
-                            self.random_sleep(3, 5)
+                            self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
                             retry_count += 1
                             continue
 
@@ -1051,7 +1051,7 @@ class AmazonScraper:
                 logger.error(f"Error getting search results (attempt {retry_count + 1}/{max_retries}): {str(e)}")
                 retry_count += 1
                 if retry_count < max_retries:
-                    self.random_sleep(3, 5)
+                    self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
 
         logger.error(f"Failed to get search results after {max_retries} attempts")
         return []
@@ -1073,7 +1073,7 @@ class AmazonScraper:
 
             # 滚动到页面底部
             self.driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            self.random_sleep(1, 2)
+            self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
 
             # 检查是否已经到达底部
             current_height = self.driver.execute_script("return document.body.scrollHeight")
@@ -1085,7 +1085,7 @@ class AmazonScraper:
             scroll_attempt += 1
 
             # 等待新内容加载
-            self.random_sleep(1, 2)
+            self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
 
     def _get_search_results_fallback(self):
         """备用方法：使用多种选择器组合获取搜索结果"""
@@ -1177,7 +1177,7 @@ class AmazonScraper:
                 if product:
                     self.products.append(product)
                 if i < len(product_links):
-                    self.random_sleep(3, 7)
+                    self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
 
             # 保存数据到Excel
             DataSaver.save_to_excel(self.products, self.category_name)
