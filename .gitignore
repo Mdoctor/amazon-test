@@ -3,3 +3,7 @@
 /scraper.log
 /logs/
 /scraper_excel/
+*.pyc
+*.pyo
+*.pyd
+
