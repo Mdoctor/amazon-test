@@ -1,30 +1,54 @@
-import json
+import os
+import pickle
 
 
-def read_json_file(file_path):
-    with open(file_path, "r") as f:
-        return json.load(f)
+default_conf = {
+    "headless": True,
+    "max_products_per_category": 9,
+    "max_workers": 12,
+    "chunk_size": 100,
+    "wait_time": 11,
+    "min_sleep": 5,
+    "max_sleep": 1,
+    "scroll_steps": 1,
+    "vpn_enabled": True,
+    "vpn_name": "",
+    "vpn_username": "",
+    "vpn_password": "",
+}
 
 
-json_config = read_json_file("configure.json")
-print(json_config)
+def load_pickle(pkl):
+    if not os.path.exists(pkl):
+        return default_conf
+    with open(pkl, "rb") as fp:
+        return pickle.load(fp)
+
+
+def dump_pickle(pkl, data):
+    with open(pkl, "wb") as fp:
+        pickle.dump(data, fp)
+
+
+conf_pkl = "configure.pkl"
+CONF = load_pickle(conf_pkl)
 
 
 class ScraperConfig:
-    HEADLESS = json_config["headless"]
-    MAX_PRODUCTS_PER_CATEGORY = json_config[
+    HEADLESS = CONF["headless"]
+    MAX_PRODUCTS_PER_CATEGORY = CONF[
         "max_products_per_category"
     ]  # 每个类别爬取的商品数量
-    MAX_WORKERS = json_config["max_workers"]  # 最大并行进程数
-    CHUNK_SIZE = json_config["chunk_size"]  # 每个进程处理的产品数量
-    WAIT_TIME = json_config["wait_time"]  # 等待时间
-    MIN_SLEEP = json_config["min_sleep"]  # 最小等待时间
-    MAX_SLEEP = json_config["max_sleep"]  # 最大等待时间
-    SCROLL_STEPS = json_config["scroll_steps"]  # 滚动次数
-    VPN_ENABLE = json_config["vpn_enable"]  # 是否启用VPN
-    VPN_NAME = json_config["vpn_name"]  # VPN名称
-    VPN_USERNAME = json_config["vpn_username"]  # VPN用户名
-    VPN_PASSWORD = json_config["vpn_password"]  # VPN密码
+    MAX_WORKERS = CONF["max_workers"]  # 最大并行进程数
+    CHUNK_SIZE = CONF["chunk_size"]  # 每个进程处理的产品数量
+    WAIT_TIME = CONF["wait_time"]  # 等待时间
+    MIN_SLEEP = CONF["min_sleep"]  # 最小等待时间
+    MAX_SLEEP = CONF["max_sleep"]  # 最大等待时间
+    SCROLL_STEPS = CONF["scroll_steps"]  # 滚动次数
+    VPN_ENABLE = CONF["vpn_enabled"]  # 是否启用VPN
+    VPN_NAME = CONF["vpn_name"]  # VPN名称
+    VPN_USERNAME = CONF["vpn_username"]  # VPN用户名
+    VPN_PASSWORD = CONF["vpn_password"]  # VPN密码
     WINDOW_SIZE = (1920, 1080)
 
     TITLE_SELECTORS = [
