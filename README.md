@@ -29,7 +29,8 @@ cd amazon-test
 
 2. 安装依赖包：
 ```bash
-pip install -r requirements.txt
+pip install poetry
+poetry install --no-root
 ```
 
 ## 配置说明
@@ -64,7 +65,7 @@ results = parallel_scraper.run_parallel(search_terms)
 
 2. 命令行运行：
 ```bash
-python main.py
+poetry run python main.py
 ```
 
 ## 项目结构
