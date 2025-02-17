@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
+from datetime import datetime
 
 class ConfigWindow(QMainWindow):
     def __init__(self):
