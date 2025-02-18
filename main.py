@@ -25,7 +25,7 @@ def connect_vpn():
             return False
 
 
-def main():
+def main(search_terms: list = []):
     vpn = None
     if ScraperConfig.VPN_ENABLE:
         vpn = connect_vpn()
@@ -34,13 +34,13 @@ def main():
             sys.exit(1)
     try:
         # 搜索关键词列表
-        search_terms = [
-            # "shoes for men",
-            "apple",
-            "laptop",
-            # "headphones",
-            # "gaming mouse"
-        ]
+        # search_terms = [
+        #     # "shoes for men",
+        #     "apple",
+        #     "laptop",
+        #     # "headphones",
+        #     # "gaming mouse"
+        # ]
 
         logger.info(f"Starting parallel scraping for {len(search_terms)} search terms")
         start_time = time.time()
@@ -98,4 +98,11 @@ def main():
 
 
 if __name__ == "__main__":
+    search_terms = [
+        # "shoes for men",
+        "apple",
+        "laptop",
+        # "headphones",
+        # "gaming mouse"
+    ]
     main()

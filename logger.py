@@ -24,7 +24,7 @@ def get_logger():
         return _logger
 
     # 创建日志文件名
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    timestamp = datetime.now().strftime('%Y%m%d')
     _log_file = f'logs/scraper_{timestamp}.log'
 
     # 确保logs目录存在
