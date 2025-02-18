@@ -4,12 +4,12 @@ import pickle
 
 default_conf = {
     "headless": True,
-    "max_products_per_category": 9,
+    "max_products_per_category": 10,
     "max_workers": 12,
     "chunk_size": 100,
     "wait_time": 11,
-    "min_sleep": 5,
-    "max_sleep": 1,
+    "min_sleep": 1,
+    "max_sleep": 2,
     "scroll_steps": 1,
     "vpn_enabled": True,
     "vpn_name": "",

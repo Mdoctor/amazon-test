@@ -1287,13 +1287,21 @@ class AmazonScraper:
                 if i < len(product_links):
                     self.random_sleep(ScraperConfig.MIN_SLEEP, ScraperConfig.MAX_SLEEP)
 
-            # 保存数据到Excel
-            DataSaver.save_to_excel(self.products, self.category_name)
-            return True
+            # 保存数据到Excel并获取保存的文件路径
+            saved_file_path = DataSaver.save_to_excel(self.products, self.category_name)
+            return {
+                'success': True,
+                'saved_file_path': saved_file_path,
+                'category_name': self.category_name
+            }
 
         except Exception as e:
             logger.error(f"Error in main scraping process: {str(e)}")
-            return False
+            return {
+                'success': False,
+                'saved_file_path': None,
+                'category_name': self.category_name
+            }
 
     def run_multiple_categories(self, category_urls):
         """运行多个类别的爬虫"""

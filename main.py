@@ -5,6 +5,9 @@ from config import ScraperConfig
 from urllib.parse import quote_plus
 import time
 from vpn_helper import VPNConnector
+from finalExcel import process_excel
+from data_saver import DataSaver
+import os
 
 
 def connect_vpn():
@@ -57,6 +60,20 @@ def main(search_terms: list = []):
 
         # 运行并行爬虫
         results = parallel_scraper.run_parallel(search_urls)
+
+        for result in results:
+            if result["success"] and "saved_file_path" in result:
+                saved_file_path = result["saved_file_path"]
+                if saved_file_path:
+                    # 处理保存的CSV文件
+                    final_output = process_excel(
+                        saved_file_path,
+                        DataSaver.FINAL_OUTPUT_DIR
+                    )
+                    if final_output:
+                        logger.info(f"Successfully processed and saved final output: {final_output}")
+                    else:
+                        logger.error(f"Failed to process file: {saved_file_path}")
 
         # 统计结果
         successful = sum(1 for r in results if r["success"])

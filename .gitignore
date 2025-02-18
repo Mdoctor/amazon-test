@@ -7,3 +7,4 @@
 *.pyo
 *.pyd
 
+/output_excel/

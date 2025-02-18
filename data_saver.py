@@ -3,168 +3,139 @@ import time
 import re
 import pandas as pd
 from logger import logger
-from openpyxl.styles import Font, PatternFill, Alignment
 
 
 class DataSaver:
-    # 定义输出目录
     OUTPUT_DIR = 'scraper_excel'
+    FINAL_OUTPUT_DIR = 'output_excel'
 
     @staticmethod
     def save_to_excel(products, category_name):
-        """保存商品信息到Excel文件"""
+        """保存商品信息到Excel文件，适配WooCommerce格式"""
         try:
             if not products:
                 logger.warning("No products to save")
-                return
+                return None
 
-            # 创建输出目录（如果不存在）
+            # 创建输出目录
             os.makedirs(DataSaver.OUTPUT_DIR, exist_ok=True)
+            os.makedirs(DataSaver.FINAL_OUTPUT_DIR, exist_ok=True)
 
-            # 准备数据
+            # 准备WooCommerce所需的列
+            woo_columns = [
+                'Title', 'Description', 'Short description', 'Regular price', 'Sale_Price',
+                'Category', 'Images', 'SKU', 'Sizes', 'Color'
+            ]
+
+            # 转换数据为WooCommerce格式
+            woo_data = []
+            for product in products:
+                # 提取价格信息
+                regular_price = product['price']['original_price']
+                if regular_price == 'N/A':
+                    regular_price = product['price']['current_price']
+
+                sale_price = product['price']['current_price'] if product['price'][
+                                                                      'current_price'] != regular_price else ''
+
+                # 提取尺寸信息（从描述中查找）
+                sizes = DataSaver._extract_sizes(product['description'])
+
+                # 提取颜色信息（从描述中查找）
+                colors = DataSaver._extract_colors(product['description'])
+
+                # 生成简短描述（取描述的前100个字符）
+                short_description = DataSaver._create_short_description(product['description'])
+
+                # 处理图片URL
+                image_url = product['image_url'].replace('fmt=webp', 'fmt=jpg') if product['image_url'] != 'N/A' else ''
+
+                # 生成SKU
+                sku = f"{product['asin']}" if product['asin'] != 'N/A' else ''
+
+                woo_data.append({
+                    'Title': product['title'],
+                    'Description': product['description'],
+                    'Short description': short_description,
+                    'Regular price': regular_price,
+                    'Sale_Price': sale_price,
+                    'Category': product['category'],
+                    'Images': image_url,
+                    'SKU': sku,
+                    'Sizes': ','.join(sizes) if sizes else '',
+                    'Color': ','.join(colors) if colors else 'As shown in the figure',
+                })
+
+            # 创建DataFrame
+            df = pd.DataFrame(woo_data, columns=woo_columns)
+
+            # 保存文件
             safe_category_name = re.sub(r'[<>:"/\\|?*]', '_', category_name)
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            filename = f'{safe_category_name}_bestsellers_{timestamp}.xlsx'
-
-            # 构建完整的文件路径
+            filename = f'{safe_category_name}_products_{timestamp}.csv'
             full_path = os.path.join(DataSaver.OUTPUT_DIR, filename)
 
-            # 创建DataFrame，包含所有字段
-            df = pd.DataFrame([
-                {
-                    'Rank': i + 1,
-                    'ASIN': p['asin'],
-                    'Title': p['title'],
-                    'Brand': p['brand'],
-                    'Current Price': p['price']['current_price'],
-                    'Original Price': p['price']['original_price'],
-                    'Deal Price': p['price']['deal_price'],
-                    'Price Range Min': p['price']['price_range']['min'],
-                    'Price Range Max': p['price']['price_range']['max'],
-                    'Savings Amount': p['price']['savings']['amount'],
-                    'Savings Percentage': p['price']['savings']['percentage'],
-                    'Prime Price': p['price']['prime_price'],
-                    'Installment': p['price']['installment'],
-                    'Coupon': p['price']['coupon'],
-                    'Rating': p['rating'],
-                    'Review Count': p['review_count'],
-                    'Availability': p['availability'],
-                    'Description': p['description'],
-                    'Image URL': p['image_url'],
-                    'Product URL': p['url'],
-                    'Category': p['category'],
-                    'Timestamp': p['timestamp']
-                }
-                for i, p in enumerate(products)
-            ])
-
-            # 直接保存到指定路径
-            DataSaver._save_with_formatting(df, full_path)
+            # 保存为CSV格式
+            df.to_csv(full_path, index=False, encoding='utf-8-sig')
             logger.info(f"Successfully saved to {full_path}")
 
-        except Exception as e:
-            logger.error(f"Error saving to Excel: {str(e)}")
-            # 如果Excel保存失败，尝试CSV备份
-            DataSaver._save_as_csv_backup(df, safe_category_name, timestamp)
-
-    @staticmethod
-    def _save_with_formatting(df, full_path):
-        """保存Excel文件并设置格式"""
-        try:
-            # 在保存之前处理数据，限制长文本
-            df_formatted = df.copy()
-
-            # 创建 ExcelWriter 对象
-            with pd.ExcelWriter(full_path, engine='openpyxl') as writer:
-                # 将处理后的数据写入Excel
-                df_formatted.to_excel(writer, index=False, sheet_name='Bestsellers')
-                worksheet = writer.sheets['Bestsellers']
-
-                # 设置默认行高 (单位：点)
-                default_row_height = 25  # 可以调整这个值来改变行高
-                worksheet.sheet_format.defaultRowHeight = default_row_height
-
-                # 设置所有行的高度一致
-                for row_idx in range(1, worksheet.max_row + 1):
-                    worksheet.row_dimensions[row_idx].height = default_row_height
-
-                # 设置列宽
-                for idx, col in enumerate(df_formatted.columns):
-
-                    # 根据列类型设置宽度
-                    if col in ['Description', 'Title', 'URL', 'Image URL', 'Product URL']:
-                        adjusted_width = 40
-                    elif any(price_text in col for price_text in ['Price', 'Savings']):
-                        adjusted_width = 20
-                    elif col in ['Rank', 'Review Count']:
-                        adjusted_width = 20
-                    else:
-                        adjusted_width = 15
-
-                    # 设置列宽
-                    column_letter = chr(65 + idx) if idx < 26 else chr(64 + idx // 26) + chr(65 + (idx % 26))
-                    worksheet.column_dimensions[column_letter].width = adjusted_width
-
-                # 设置标题行格式
-                header_font = Font(bold=True)
-                header_fill = PatternFill(start_color="E0E0E0", end_color="E0E0E0", fill_type="solid")
-                header_alignment = Alignment(horizontal='center', vertical='center', wrap_text=False)
-
-                for cell in worksheet[1]:
-                    cell.font = header_font
-                    cell.fill = header_fill
-                    cell.alignment = header_alignment
-
-                # 设置数据行格式
-                data_alignment = Alignment(vertical='center', wrap_text=False)
-                price_alignment = Alignment(horizontal='right', vertical='center', wrap_text=False)
-
-                for row in worksheet.iter_rows(min_row=2):
-                    for cell in row:
-                        # 设置基本对齐方式
-                        cell.alignment = data_alignment
-
-                        # 特殊列的处理
-                        column_name = df_formatted.columns[cell.column - 1]
-
-                        # 价格相关列右对齐
-                        if any(price_text in column_name for price_text in ['Price', 'Savings']):
-                            cell.alignment = price_alignment
-
-                        # URL列添加超链接
-                        if column_name in ['Product URL', 'Image URL']:
-                            if cell.value and cell.value != 'N/A' and '...' not in str(cell.value):
-                                cell.hyperlink = cell.value
-                                cell.font = Font(color="0000FF", underline="single")
-
-                        # 数字列居中对齐
-                        if column_name in ['Rank', 'Review Count']:
-                            cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=False)
-
-                # 设置自动筛选
-                worksheet.auto_filter.ref = worksheet.dimensions
-
-                # 冻结标题行
-                worksheet.freeze_panes = 'A2'
+            return full_path
 
         except Exception as e:
-            logger.error(f"Error formatting Excel file: {str(e)}")
-            # 如果格式化失败，尝试基本保存
-            df.to_excel(full_path, index=False)
+            logger.error(f"Error saving data: {str(e)}")
+            return None
 
     @staticmethod
-    def _save_as_csv_backup(df, category_name, timestamp):
-        """作为备份保存为CSV文件"""
-        try:
-            # 确保输出目录存在
-            os.makedirs(DataSaver.OUTPUT_DIR, exist_ok=True)
+    def _extract_sizes(description):
+        """从描述中提取尺寸信息"""
+        size_patterns = [
+            r'Size:?\s*((?:X?S|X?M|X?L|XXL|XXXL|2XL|3XL|4XL|5XL)(?:\s*,\s*(?:X?S|X?M|X?L|XXL|XXXL|2XL|3XL|4XL|5XL))*)',
+            r'Available sizes?:?\s*((?:\d+(?:\.\d+)?(?:\s*,\s*\d+(?:\.\d+)?)*))(?:\s*(?:cm|inch|inches|"|\'|mm))?',
+            r'Sizes?(?:\s+available)?:?\s*((?:Small|Medium|Large|X-Large|XX-Large)(?:\s*,\s*(?:Small|Medium|Large|X-Large|XX-Large))*)',
+        ]
 
-            # 构建CSV文件路径
-            csv_filename = f'{category_name}_bestsellers_{timestamp}.csv'
-            csv_path = os.path.join(DataSaver.OUTPUT_DIR, csv_filename)
+        sizes = set()
+        if description and description != 'N/A':
+            for pattern in size_patterns:
+                matches = re.findall(pattern, description, re.IGNORECASE)
+                for match in matches:
+                    if isinstance(match, str):
+                        sizes.update(size.strip() for size in match.split(','))
 
-            # 保存CSV文件
-            df.to_csv(csv_path, index=False, encoding='utf-8-sig')
-            logger.info(f"Saved data as CSV backup at: {csv_path}")
-        except Exception as csv_error:
-            logger.error(f"Failed to save as CSV as well: {str(csv_error)}")
+        return sorted(list(sizes)) if sizes else []
+
+    @staticmethod
+    def _extract_colors(description):
+        """从描述中提取颜色信息"""
+        color_patterns = [
+            r'Colou?rs?:?\s*((?:[A-Za-z]+(?:\s+[A-Za-z]+)*(?:\s*,\s*[A-Za-z]+(?:\s+[A-Za-z]+)*)*))(?:\.|$|\n)',
+            r'Available colou?rs?:?\s*((?:[A-Za-z]+(?:\s+[A-Za-z]+)*(?:\s*,\s*[A-Za-z]+(?:\s+[A-Za-z]+)*)*))(?:\.|$|\n)',
+        ]
+
+        colors = set()
+        if description and description != 'N/A':
+            for pattern in color_patterns:
+                matches = re.findall(pattern, description, re.IGNORECASE)
+                for match in matches:
+                    if isinstance(match, str):
+                        colors.update(color.strip() for color in match.split(','))
+
+        return sorted(list(colors)) if colors else []
+
+    @staticmethod
+    def _create_short_description(description):
+        """创建简短描述"""
+        if description and description != 'N/A':
+            # 移除HTML标签
+            clean_desc = re.sub(r'<[^>]+>', '', description)
+            # 取前100个字符
+            short_desc = clean_desc[:100].strip()
+            # 确保不会截断单词
+            if len(clean_desc) > 100:
+                last_space = short_desc.rfind(' ')
+                if last_space > 0:
+                    short_desc = short_desc[:last_space] + '...'
+                else:
+                    short_desc += '...'
+            return short_desc
+        return ''
